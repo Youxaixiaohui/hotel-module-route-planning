@@ -1,0 +1,3749 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}智能路线规划{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --rp-bg-deep: #0c1222;
+        --rp-indigo-900: #1e1b4b;
+        --rp-indigo-700: #3730a3;
+        --rp-slate-400: #94a3b8;
+        --rp-slate-200: #e2e8f0;
+        --rp-accent: #38bdf8;
+        --rp-accent-warm: #fbbf24;
+        --rp-glass: rgba(15, 23, 42, 0.58);
+        --rp-glass-border: rgba(148, 163, 184, 0.22);
+        --rp-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+        --rp-radius-lg: 16px;
+        --rp-radius-md: 12px;
+        --rp-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+        background: var(--rp-bg-deep);
+        color: var(--rp-slate-200);
+        letter-spacing: 0.01em;
+        line-height: 1.5;
+    }
+
+    .navbar {
+        display: none !important;
+    }
+
+    /* 本页全屏地图：去掉主内容区留白并隐藏页脚 */
+    .main-content {
+        padding: 0 !important;
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .footer {
+        display: none !important;
+    }
+
+    .page-container {
+        position: relative;
+        width: 100%;
+        flex: 1;
+        min-height: 100vh;
+        overflow: hidden;
+        background: radial-gradient(120% 80% at 10% 0%, #1e293b 0%, var(--rp-bg-deep) 55%, #020617 100%);
+    }
+
+    .map-container {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+    }
+
+    #baiduMap,
+    #amapContainer {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* 左上角玻璃拟态控制面板 */
+    .control-panel {
+        position: absolute;
+        top: 20px;
+        left: 76px;
+        z-index: 120;
+        width: min(400px, calc(100vw - 40px));
+        max-height: min(560px, calc(100vh - 40px));
+        display: flex;
+        flex-direction: column;
+        border-radius: var(--rp-radius-lg);
+        background: var(--rp-glass);
+        backdrop-filter: blur(22px);
+        -webkit-backdrop-filter: blur(22px);
+        border: 1px solid var(--rp-glass-border);
+        box-shadow: var(--rp-shadow);
+        overflow: hidden;
+        animation: rp-panel-in 0.55s var(--rp-ease) both;
+    }
+
+    .control-panel.dragging {
+        animation: none;
+        transition: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    .panel-drag-handle {
+        height: 18px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: grab;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    .panel-drag-handle::before {
+        content: '';
+        width: 42px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(226, 232, 240, 0.55);
+    }
+
+    .control-panel.dragging .panel-drag-handle {
+        cursor: grabbing;
+    }
+
+    @keyframes rp-panel-in {
+        from {
+            opacity: 0;
+            transform: translateY(12px) scale(0.98);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    .panel-header {
+        position: relative;
+        padding: 18px 20px 16px;
+        background: linear-gradient(135deg, rgba(49, 46, 129, 0.95) 0%, rgba(30, 27, 75, 0.88) 55%, rgba(15, 23, 42, 0.92) 100%);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .panel-minimize-btn {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        border: 1px solid rgba(226, 232, 240, 0.25);
+        background: rgba(15, 23, 42, 0.45);
+        color: rgba(248, 250, 252, 0.95);
+        font-size: 18px;
+        line-height: 1;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s var(--rp-ease);
+    }
+
+    .panel-minimize-btn:hover {
+        background: rgba(15, 23, 42, 0.72);
+        border-color: rgba(56, 189, 248, 0.65);
+        transform: translateY(-1px);
+    }
+
+    .control-panel.is-minimized {
+        display: none;
+    }
+
+    .panel-restore-btn {
+        position: fixed;
+        left: 76px;
+        top: 20px;
+        width: 56px;
+        height: 56px;
+        border: none;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.96) 0%, rgba(37, 99, 235, 0.92) 100%);
+        color: #ffffff;
+        font-size: 28px;
+        cursor: pointer;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 16px 30px -14px rgba(30, 64, 175, 0.9);
+        z-index: 130;
+        touch-action: none;
+        transition: transform 0.2s var(--rp-ease), box-shadow 0.2s var(--rp-ease);
+    }
+
+    .panel-restore-btn.show {
+        display: inline-flex;
+    }
+
+    .panel-restore-btn:hover {
+        transform: translateY(-2px) scale(1.03);
+        box-shadow: 0 18px 34px -12px rgba(30, 64, 175, 0.95);
+    }
+
+    .panel-restore-btn.dragging {
+        cursor: grabbing;
+        transition: none;
+        transform: none;
+    }
+
+    .minimized-fab.dragging {
+        cursor: grabbing;
+        transition: none;
+        transform: none;
+    }
+
+    .panel-header h2 {
+        font-size: 1.125rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.35;
+        margin-bottom: 6px;
+        color: #f8fafc;
+    }
+
+    .panel-header p {
+        font-size: 0.8125rem;
+        font-weight: 400;
+        color: rgba(226, 232, 240, 0.82);
+        line-height: 1.55;
+    }
+
+    .panel-content {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 16px 18px 12px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+    }
+
+    .panel-content::-webkit-scrollbar {
+        width: 6px;
+    }
+    .panel-content::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.35);
+        border-radius: 999px;
+    }
+
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: rgba(248, 250, 252, 0.88);
+        text-decoration: none;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+        transition: color 0.25s var(--rp-ease), transform 0.25s var(--rp-ease);
+    }
+    .back-link:hover {
+        color: #fff;
+        transform: translateX(-2px);
+    }
+
+    .instruction-box {
+        background: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(56, 189, 248, 0.22);
+        border-radius: var(--rp-radius-md);
+        padding: 14px 14px 12px;
+        margin-bottom: 16px;
+        font-size: 0.8125rem;
+        color: rgba(226, 232, 240, 0.92);
+        line-height: 1.65;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .instruction-box strong {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: var(--rp-accent);
+        letter-spacing: 0.02em;
+    }
+
+    .btn-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .btn-group .btn {
+        flex: 1;
+        padding: 12px 10px;
+        border-radius: var(--rp-radius-md);
+        border: 1px dashed rgba(148, 163, 184, 0.45);
+        background: rgba(15, 23, 42, 0.35);
+        color: #e2e8f0;
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition: background 0.28s var(--rp-ease), border-color 0.28s var(--rp-ease),
+            box-shadow 0.28s var(--rp-ease), transform 0.2s var(--rp-ease);
+    }
+
+    .btn-group .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 22px -12px rgba(0, 0, 0, 0.55);
+    }
+
+    .btn-start {
+        border-color: rgba(52, 211, 153, 0.55);
+        color: #6ee7b7;
+    }
+    .btn-start:hover,
+    .btn-start.active {
+        background: rgba(16, 185, 129, 0.18);
+        border-style: solid;
+        border-color: rgba(52, 211, 153, 0.85);
+        box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.25);
+    }
+
+    .btn-end {
+        border-color: rgba(251, 113, 133, 0.55);
+        color: #fda4af;
+    }
+    .btn-end:hover,
+    .btn-end.active {
+        background: rgba(244, 63, 94, 0.16);
+        border-style: solid;
+        border-color: rgba(251, 113, 133, 0.85);
+        box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.22);
+    }
+
+    .btn-spot {
+        width: 100%;
+        margin-bottom: 14px;
+        padding: 12px 14px;
+        border-radius: var(--rp-radius-md);
+        border: 1px dashed rgba(56, 189, 248, 0.5);
+        background: rgba(15, 23, 42, 0.35);
+        color: #bae6fd;
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition: background 0.28s var(--rp-ease), border-color 0.28s var(--rp-ease),
+            box-shadow 0.28s var(--rp-ease), transform 0.2s var(--rp-ease);
+    }
+    .btn-spot:hover,
+    .btn-spot.active {
+        background: rgba(14, 165, 233, 0.18);
+        border-style: solid;
+        border-color: rgba(56, 189, 248, 0.9);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.28);
+        transform: translateY(-1px);
+    }
+
+    .selection-status {
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: var(--rp-radius-md);
+        padding: 6px 12px 8px;
+        margin-bottom: 14px;
+    }
+
+    .status-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        animation: rp-row-in 0.45s var(--rp-ease) both;
+    }
+    .status-item:nth-child(2) { animation-delay: 0.05s; }
+    .status-item:nth-child(3) { animation-delay: 0.1s; }
+
+    @keyframes rp-row-in {
+        from {
+            opacity: 0;
+            transform: translateX(-8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    .status-item:last-child {
+        border-bottom: none;
+        padding-bottom: 4px;
+    }
+
+    .status-icon {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.6875rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: #fff;
+        box-shadow: 0 8px 18px -8px rgba(0, 0, 0, 0.55);
+    }
+
+    .status-icon.start {
+        background: linear-gradient(145deg, #10b981, #059669);
+    }
+    .status-icon.end {
+        background: linear-gradient(145deg, #f43f5e, #e11d48);
+    }
+    .status-icon.spot {
+        background: linear-gradient(145deg, #0ea5e9, #2563eb);
+    }
+
+    .status-text-wrap {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .status-label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(148, 163, 184, 0.95);
+    }
+
+    .status-text {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: #f1f5f9;
+        line-height: 1.45;
+        word-break: break-word;
+    }
+
+    .spots-list {
+        max-height: 180px;
+        overflow-y: auto;
+        margin-bottom: 4px;
+        padding-right: 2px;
+    }
+
+    .spot-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: rgba(30, 41, 59, 0.45);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: var(--rp-radius-md);
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        transition: transform 0.25s var(--rp-ease), box-shadow 0.25s var(--rp-ease),
+            border-color 0.25s var(--rp-ease);
+        animation: rp-spot-in 0.4s var(--rp-ease) both;
+    }
+
+    @keyframes rp-spot-in {
+        from {
+            opacity: 0;
+            transform: translateY(6px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .spot-item:hover {
+        transform: translateY(-2px);
+        border-color: rgba(56, 189, 248, 0.35);
+        box-shadow: 0 12px 28px -18px rgba(0, 0, 0, 0.65);
+    }
+
+    .spot-number {
+        width: 26px;
+        height: 26px;
+        background: linear-gradient(145deg, #38bdf8, #2563eb);
+        color: #fff;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        flex-shrink: 0;
+        box-shadow: 0 6px 14px -6px rgba(37, 99, 235, 0.65);
+    }
+
+    .spot-item .spot-name {
+        flex: 1;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: #e2e8f0;
+        min-width: 0;
+    }
+
+    .spot-remove {
+        flex-shrink: 0;
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        border: none;
+        background: rgba(244, 63, 94, 0.12);
+        color: #fda4af;
+        cursor: pointer;
+        font-size: 1.125rem;
+        line-height: 1;
+        transition: background 0.2s var(--rp-ease), color 0.2s var(--rp-ease);
+    }
+    .spot-remove:hover {
+        background: rgba(244, 63, 94, 0.28);
+        color: #fff;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+        margin-top: auto;
+        padding: 14px 16px 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.14);
+        background: rgba(15, 23, 42, 0.35);
+    }
+
+    .btn-primary {
+        flex: 2;
+        padding: 13px 14px;
+        border: none;
+        border-radius: var(--rp-radius-md);
+        font-size: 0.9375rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        color: #0f172a;
+        background: linear-gradient(135deg, var(--rp-accent-warm) 0%, #f59e0b 100%);
+        box-shadow: 0 14px 32px -14px rgba(245, 158, 11, 0.75);
+        transition: transform 0.22s var(--rp-ease), box-shadow 0.22s var(--rp-ease), filter 0.22s var(--rp-ease);
+    }
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.05);
+        box-shadow: 0 18px 38px -16px rgba(245, 158, 11, 0.85);
+    }
+    .btn-primary:active {
+        transform: translateY(0);
+    }
+
+    .btn-secondary {
+        flex: 1;
+        padding: 13px 12px;
+        border-radius: var(--rp-radius-md);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(30, 41, 59, 0.55);
+        color: #e2e8f0;
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.22s var(--rp-ease), border-color 0.22s var(--rp-ease),
+            transform 0.2s var(--rp-ease);
+    }
+    .btn-secondary:hover {
+        background: rgba(51, 65, 85, 0.75);
+        border-color: rgba(148, 163, 184, 0.55);
+        transform: translateY(-1px);
+    }
+
+    /* 地图切换 — 右上玻璃胶囊 */
+    .map-switcher {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        z-index: 110;
+        display: none;
+        gap: 8px;
+        padding: 6px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.52);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid var(--rp-glass-border);
+        box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.55);
+    }
+
+    .map-switch-btn {
+        padding: 8px 16px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: rgba(226, 232, 240, 0.82);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition: background 0.25s var(--rp-ease), color 0.25s var(--rp-ease),
+            border-color 0.25s var(--rp-ease), box-shadow 0.25s var(--rp-ease);
+    }
+
+    .map-switch-btn:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #f8fafc;
+    }
+
+    .map-switch-btn.active {
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(99, 102, 241, 0.45));
+        color: #f8fafc;
+        border-color: rgba(56, 189, 248, 0.45);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.2);
+    }
+
+    /* 右下角定位按钮 */
+    .map-locate-btn {
+        position: absolute;
+        right: 20px;
+        bottom: 20px;
+        z-index: 135; /* 高于结果面板 z-index=130 */
+        width: 46px;
+        height: 46px;
+        border-radius: 16px;
+        border: 1px solid var(--rp-glass-border);
+        background: rgba(15, 23, 42, 0.52);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.55);
+        cursor: pointer;
+        color: rgba(226, 232, 240, 0.92);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s var(--rp-ease), background 0.2s var(--rp-ease), color 0.2s var(--rp-ease);
+    }
+
+    .map-locate-btn:hover {
+        transform: translateY(-2px);
+        background: rgba(15, 23, 42, 0.68);
+        color: #fff;
+    }
+
+    .map-locate-btn:active {
+        transform: translateY(0);
+    }
+
+    /* 右上角悬浮规划结果 */
+    .result-panel {
+        position: absolute;
+        top: 86px;
+        right: 20px;
+        z-index: 130;
+        width: min(390px, calc(100vw - 40px));
+        max-height: min(70vh, 560px);
+        display: flex;
+        flex-direction: column;
+        border-radius: var(--rp-radius-lg);
+        background: rgba(248, 250, 252, 0.94);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        box-shadow: 0 24px 48px -24px rgba(15, 23, 42, 0.45);
+        overflow: hidden;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-8px) scale(0.98);
+        transform-origin: top right;
+        transition: opacity 0.26s var(--rp-ease), transform 0.26s var(--rp-ease);
+        will-change: transform;
+    }
+
+    .result-panel.show {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0) scale(1);
+    }
+
+    .result-panel.dragging {
+        transition: none;
+    }
+
+    .result-panel.resizing {
+        transition: none;
+    }
+
+    .result-header {
+        padding: 12px 20px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        cursor: move;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    .result-header h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #0f172a;
+    }
+
+    .result-close {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        border: none;
+        background: rgba(15, 23, 42, 0.06);
+        font-size: 1.375rem;
+        line-height: 1;
+        cursor: pointer;
+        color: #64748b;
+        transition: background 0.2s var(--rp-ease), color 0.2s var(--rp-ease), transform 0.2s var(--rp-ease);
+    }
+    .result-close:hover {
+        background: rgba(15, 23, 42, 0.1);
+        color: #0f172a;
+        transform: scale(1.05);
+    }
+
+    .result-summary {
+        flex-shrink: 0;
+        padding: 14px 20px 16px;
+        background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+
+    .summary-item {
+        flex: 1;
+        text-align: center;
+        padding: 10px 8px;
+        border-radius: var(--rp-radius-md);
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        box-shadow: 0 4px 14px -8px rgba(15, 23, 42, 0.25);
+    }
+
+    .summary-value {
+        font-size: 1.125rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, #312e81, #6366f1);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    .summary-label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #64748b;
+        margin-top: 6px;
+    }
+
+    .result-route {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 16px 20px 24px;
+        background: #f8fafc;
+    }
+
+    .result-resize-handle {
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        z-index: 2;
+    }
+
+    .result-resize-handle.br {
+        right: 0;
+        bottom: 0;
+        cursor: nwse-resize;
+        background: linear-gradient(135deg, transparent 50%, rgba(100, 116, 139, 0.5) 50%);
+    }
+
+    .result-resize-handle.tl {
+        left: 0;
+        top: 0;
+        cursor: nwse-resize;
+        background: linear-gradient(315deg, transparent 50%, rgba(100, 116, 139, 0.5) 50%);
+    }
+
+    .route-stop {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 14px;
+        border-radius: var(--rp-radius-md);
+        margin-bottom: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: #fff;
+        box-shadow: 0 8px 24px -16px rgba(15, 23, 42, 0.2);
+        transition: box-shadow 0.25s var(--rp-ease), transform 0.25s var(--rp-ease);
+        cursor: pointer;
+    }
+    .route-stop:hover {
+        box-shadow: 0 12px 28px -14px rgba(15, 23, 42, 0.28);
+        transform: translateY(-1px);
+    }
+
+    .route-stop.is-selected {
+        border-color: rgba(245, 158, 11, 0.85);
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35), 0 14px 30px -16px rgba(245, 158, 11, 0.5);
+    }
+
+    .route-stop.start {
+        background: linear-gradient(135deg, rgba(236, 253, 245, 0.95), #fff);
+        border-color: rgba(16, 185, 129, 0.35);
+    }
+    .route-stop.end {
+        background: linear-gradient(135deg, rgba(255, 241, 242, 0.95), #fff);
+        border-color: rgba(244, 63, 94, 0.35);
+    }
+
+    .stop-marker {
+        width: 32px;
+        height: 32px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-weight: 800;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+        box-shadow: 0 8px 18px -10px rgba(0, 0, 0, 0.45);
+    }
+
+    .route-stop.start .stop-marker {
+        background: linear-gradient(145deg, #10b981, #059669);
+    }
+    .route-stop.end .stop-marker {
+        background: linear-gradient(145deg, #f43f5e, #e11d48);
+    }
+    .route-stop:not(.start):not(.end) .stop-marker {
+        background: linear-gradient(145deg, #0ea5e9, #2563eb);
+    }
+
+    .stop-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .route-stop .stop-name {
+        font-weight: 700;
+        font-size: 0.9375rem;
+        color: #0f172a;
+        letter-spacing: -0.01em;
+    }
+
+    .stop-address {
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-top: 4px;
+        line-height: 1.45;
+    }
+
+    .stop-time,
+    .stop-duration {
+        font-size: 0.75rem;
+        margin-top: 6px;
+        color: #475569;
+    }
+    .stop-time {
+        color: #0d9488;
+        font-weight: 600;
+    }
+    .stop-duration {
+        color: #4f46e5;
+        font-weight: 500;
+    }
+
+    .result-route .route-segment {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        margin: 6px 0 14px;
+        background: linear-gradient(90deg, rgba(99, 102, 241, 0.08), rgba(56, 189, 248, 0.08));
+        border-radius: var(--rp-radius-md);
+        border: 1px solid rgba(99, 102, 241, 0.15);
+    }
+
+    .result-route .route-segment .segment-distance,
+    .result-route .route-segment .segment-time {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: #334155;
+    }
+    .result-route .route-segment .segment-time {
+        color: #6366f1;
+    }
+
+    /* 加载遮罩 */
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 200;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(12, 18, 34, 0.72);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    }
+
+    .loading-overlay.show {
+        display: flex;
+    }
+
+    .loading-card {
+        padding: 32px 36px 28px;
+        border-radius: var(--rp-radius-lg);
+        background: rgba(15, 23, 42, 0.75);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        box-shadow: var(--rp-shadow);
+        text-align: center;
+        max-width: 320px;
+        animation: rp-load-pop 0.45s var(--rp-ease) both;
+    }
+
+    @keyframes rp-load-pop {
+        from {
+            opacity: 0;
+            transform: scale(0.96) translateY(8px);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    .loading-spinner {
+        width: 52px;
+        height: 52px;
+        margin: 0 auto;
+        border-radius: 50%;
+        border: 3px solid rgba(148, 163, 184, 0.25);
+        border-top-color: var(--rp-accent);
+        border-right-color: rgba(251, 191, 36, 0.85);
+        animation: spin 0.85s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .loading-text {
+        margin-top: 18px;
+        color: rgba(226, 232, 240, 0.92);
+        font-size: 0.875rem;
+        font-weight: 500;
+        line-height: 1.55;
+    }
+
+    @media (max-width: 640px) {
+        .control-panel {
+            top: 12px;
+            left: 12px;
+            width: calc(100vw - 24px);
+            max-height: min(480px, calc(100vh - 24px));
+        }
+        .map-switcher {
+            top: 12px;
+            right: 12px;
+        }
+        .result-panel {
+            top: 62px;
+            right: 12px;
+            width: calc(100vw - 24px);
+            max-height: 65vh;
+        }
+
+        .map-locate-btn {
+            right: 12px;
+            bottom: 12px;
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+        }
+
+        .panel-restore-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 14px;
+            font-size: 24px;
+        }
+    }
+    /* 自定义坐标点样式 */
+    .custom-hotel-marker {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        background: var(--rp-indigo-900); /* 深蓝底色 */
+        border: 2px solid var(--rp-accent-warm); /* 金色边框 */
+        border-radius: 50% 50% 50% 0; /* 水滴形状 */
+        transform: rotate(-45deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .custom-hotel-marker .inner-icon {
+        transform: rotate(45deg); /* 将图标转正 */
+        font-size: 20px;
+        color: var(--rp-accent-warm);
+    }
+
+    /* =========================================
+       自定义坐标点核心通用样式
+       ========================================= */
+    .custom-start-marker,
+    .custom-end-marker,
+    .custom-spot-marker {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 800;
+        border: 3px solid #ffffff; /* 粗白边，在任何复杂地图背景下都能凸显 */
+        border-radius: 50%;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+        z-index: 10;
+    }
+
+    /* 悬停放大互动 */
+    .custom-start-marker:hover,
+    .custom-end-marker:hover,
+    .custom-spot-marker:hover {
+        transform: scale(1.15);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        z-index: 20;
+    }
+
+    /* =========================================
+       1. 起点：翡翠绿 + 旋转扫描圈
+       ========================================= */
+    .custom-start-marker {
+        width: 34px;
+        height: 34px;
+        font-size: 15px;
+        background: linear-gradient(135deg, #10b981, #047857);
+        text-shadow: 0 1px 2px rgba(4, 120, 87, 0.9);
+    }
+    
+    /* 起点的外围虚线雷达动画 */
+    .custom-start-marker::before {
+        content: '';
+        position: absolute;
+        inset: -7px;
+        border-radius: 50%;
+        border: 2px dashed rgba(16, 185, 129, 0.6);
+        animation: rotate-dashed 8s linear infinite;
+        pointer-events: none;
+    }
+
+    /* =========================================
+       2. 终点：玫瑰红 + 脉冲扩散光环
+       ========================================= */
+    .custom-end-marker {
+        width: 34px;
+        height: 34px;
+        font-size: 15px;
+        background: linear-gradient(135deg, #f43f5e, #be123c);
+        text-shadow: 0 1px 2px rgba(190, 18, 60, 0.9);
+    }
+
+    /* 终点的脉冲定位动画 */
+    .custom-end-marker::after {
+        content: '';
+        position: absolute;
+        inset: -4px;
+        border-radius: 50%;
+        border: 2px solid rgba(244, 63, 94, 0.8);
+        animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        pointer-events: none;
+    }
+
+    /* =========================================
+       3. 途经点：科技蓝 + 小巧精致
+       ========================================= */
+    .custom-spot-marker {
+        width: 28px; /* 途经点比首尾稍微小一点，建立视觉层级 */
+        height: 28px;
+        font-size: 13px;
+        border-width: 2px; /* 边框也稍微细一点 */
+        background: linear-gradient(135deg, #38bdf8, #1d4ed8);
+        text-shadow: 0 1px 2px rgba(29, 78, 216, 0.9);
+    }
+
+    /* =========================================
+       专属动画关键帧
+       ========================================= */
+    @keyframes rotate-dashed {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    @keyframes pulse-ring {
+        0% { transform: scale(0.8); opacity: 1; border-width: 2px; }
+        100% { transform: scale(1.6); opacity: 0; border-width: 1px; }
+    }
+
+    /* 呼吸灯光圈动画 */
+    .marker-pulse {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background: rgba(251, 191, 36, 0.4);
+        border-radius: 50%;
+        transform: rotate(45deg);
+        z-index: -1;
+        animation: marker-glow 2s infinite;
+    }
+
+    @keyframes marker-glow {
+        0% { transform: rotate(45deg) scale(1); opacity: 0.8; }
+        100% { transform: rotate(45deg) scale(3); opacity: 0; }
+    }
+
+    /* 聚焦模式下高亮卡片样式 */
+    .route-stop.highlighted {
+        background: linear-gradient(135deg, rgba(255, 235, 59, 0.2), rgba(255, 235, 59, 0.4));
+        border-color: #FFEB3B;
+        box-shadow: 0 0 12px rgba(255, 235, 59, 0.5);
+    }
+
+    /* 最小化后的悬浮胶囊按钮 */
+    .minimized-fab {
+        position: absolute;
+        bottom: 20px;
+        left: 20px; /* 左下角 */
+        z-index: 150;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 999px; /* 极致圆角 */
+        
+        /* 玻璃拟态材质 */
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5),
+                    inset 0 1px 1px rgba(255, 255, 255, 0.1);
+        
+        cursor: pointer;
+        overflow: hidden;
+        width: 48px;  /* 初始只有圆形图标的宽度 */
+        height: 48px;
+        
+        /* 贝塞尔曲线让拉长动画非常Q弹丝滑 */
+        transition: width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+                    background 0.3s ease,
+                    border-color 0.3s ease,
+                    transform 0.3s ease;
+    }
+
+    /* 悬停时拉长显示文字 */
+    .minimized-fab:hover {
+        width: 140px; /* 拉伸宽度以容纳文字 */
+        background: rgba(30, 41, 59, 0.9);
+        border-color: rgba(56, 189, 248, 0.8);
+        transform: translateY(-2px); /* 微微上浮 */
+    }
+
+    /* 图标容器 */
+    .fab-icon-wrapper {
+        position: relative;
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #38bdf8; /* 科技蓝 */
+    }
+
+    /* 路线图标 */
+    .fab-icon-wrapper svg.route-icon {
+        width: 22px;
+        height: 22px;
+        z-index: 2;
+    }
+
+    /* 强调“智能算法”的闪烁小星星 */
+    .fab-icon-wrapper svg.sparkle-icon {
+        position: absolute;
+        top: -4px;
+        right: -6px;
+        width: 10px;
+        height: 10px;
+        color: #fbbf24; /* 温暖的金黄色 */
+        z-index: 3;
+        animation: twinkle 1.5s ease-in-out infinite alternate;
+    }
+
+    /* 底部幽幽的环境发光 */
+    .fab-glow {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle, rgba(56,189,248,0.4) 0%, transparent 70%);
+        z-index: 1;
+        animation: pulse-glow 2s ease-in-out infinite alternate;
+    }
+
+    /* 文本默认隐藏并向左偏移，展开时滑出 */
+    .fab-text {
+        white-space: nowrap;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #f8fafc;
+        opacity: 0;
+        transform: translateX(-10px);
+        transition: opacity 0.3s ease 0.1s, transform 0.3s ease 0.1s;
+    }
+
+    .minimized-fab:hover .fab-text {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    /* 动画定义 */
+    @keyframes twinkle {
+        0% { transform: scale(0.8); opacity: 0.6; filter: drop-shadow(0 0 2px rgba(251,191,36,0.4)); }
+        100% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 6px rgba(251,191,36,0.9)); }
+    }
+
+    @keyframes pulse-glow {
+        0% { transform: scale(0.8); opacity: 0.3; }
+        100% { transform: scale(1.3); opacity: 0.8; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="map-container">
+        <div class="map-switcher" id="mapSwitcher">
+            <button type="button" class="map-switch-btn" id="btnBaiduMap" onclick="switchMap('baidu')">百度地图</button>
+            <button type="button" class="map-switch-btn" id="btnAmap" onclick="switchMap('amap')">高德地图</button>
+        </div>
+
+        <div id="baiduMap" style="width: 100%; height: 100%;"></div>
+        <div id="amapContainer" style="width: 100%; height: 100%; display: none;"></div>
+
+        <button type="button" class="map-locate-btn" id="btnLocateHome" onclick="resetMapView()" aria-label="定位回原位" title="定位回原位">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 21s-6-4.35-6-10a6 6 0 1 1 12 0c0 5.65-6 10-6 10z"></path>
+                <circle cx="12" cy="11" r="2"></circle>
+            </svg>
+        </button>
+
+        <aside class="control-panel" aria-label="路线规划控制">
+            <div class="panel-header">
+                <div class="panel-drag-handle" id="panelDragHandle" role="button" tabindex="0" aria-label="拖拽移动控制面板"></div>
+                <button type="button" class="panel-minimize-btn" onclick="toggleControlPanelMinimize()" aria-label="最小化智能路线规划窗口" title="最小化">−</button>
+                <a href="#" class="back-link">← 返回</a>
+                <h2>智能路线规划</h2>
+                <p>选择起点、终点与途经景点，一键生成最优行程</p>
+            </div>
+
+            <div class="panel-content">
+                <div class="instruction-box">
+                    <strong>操作说明</strong>
+                    1. 点击「设置起点」，在地图上点选起点<br>
+                    2. 点击「设置终点」，在地图上点选终点<br>
+                    3. 点击「添加途经景点」可多次添加途经点<br>
+                    4. 右键可取消「设置途径点」，也可在左侧列表中删除<br>
+                    5. 点击「开始规划」计算最优路线
+                </div>
+
+                <div class="btn-group">
+                    <button type="button" class="btn btn-start" id="btnStart" onclick="setMode('start')" ondblclick="cancelMode()" title="双击取消设置">设置起点</button>
+                    <button type="button" class="btn btn-end" id="btnEnd" onclick="setMode('end')" ondblclick="cancelMode()" title="双击取消设置">设置终点</button>
+                </div>
+
+                <button type="button" class="btn btn-spot" id="btnSpot" onclick="setMode('spot')" ondblclick="cancelMode()" title="双击取消设置">添加途经景点</button>
+
+                <div class="selection-status">
+                    <div class="status-item">
+                        <div class="status-icon start" aria-hidden="true">起</div>
+                        <div class="status-text-wrap">
+                            <span class="status-label">起点</span>
+                            <div class="status-text" id="startStatus">未设置</div>
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-icon end" aria-hidden="true">终</div>
+                        <div class="status-text-wrap">
+                            <span class="status-label">终点</span>
+                            <div class="status-text" id="endStatus">未设置</div>
+                        </div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-icon spot" aria-hidden="true">景</div>
+                        <div class="status-text-wrap">
+                            <span class="status-label">途经</span>
+                            <div class="status-text" id="spotStatus">0 个途经景点</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="spots-list" id="spotsList"></div>
+            </div>
+
+            <div class="action-buttons">
+                <button type="button" class="btn-primary" onclick="startPlanning()">开始规划</button>
+                <button type="button" class="btn-secondary" onclick="clearAll()">清空</button>
+            </div>
+        </aside>
+        <div class="minimized-fab" id="minimizedRouteBtn" onclick="restoreControlPanel()" aria-label="展开路线规划" style="display: none;">
+            <div class="fab-icon-wrapper">
+                <svg class="route-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="6" cy="19" r="3"></circle>
+                    <path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"></path>
+                    <circle cx="18" cy="5" r="3"></circle>
+                </svg>
+                <svg class="sparkle-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/>
+                </svg>
+                <div class="fab-glow"></div>
+            </div>
+            <span class="fab-text">展开规划</span>
+        </div>
+        <button type="button" class="panel-restore-btn" id="panelRestoreBtn" onclick="restoreControlPanel()" aria-label="恢复智能路线规划窗口" title="恢复智能路线规划">🗺️</button>
+
+        <div class="result-panel" id="resultPanel">
+            <div class="result-resize-handle tl" id="resultResizeHandleTL" data-dir="tl" aria-hidden="true"></div>
+            <div class="result-header">
+                <h3>规划结果</h3>
+                <button type="button" class="result-close" onclick="closeResult()" aria-label="关闭">×</button>
+            </div>
+            <div class="result-summary" id="resultSummary"></div>
+            <div class="result-route" id="resultRoute"></div>
+            <div class="result-resize-handle br" id="resultResizeHandle" data-dir="br" aria-hidden="true"></div>
+        </div>
+
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-card">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">正在使用蚁群算法规划最优路线...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 百度地图 API -->
+{% if baidu_map_ak %}
+<script type="text/javascript">
+window.baiduMapLoaded = false;
+window.baiduMapLoadCallback = function() {
+    window.baiduMapLoaded = true;
+    console.log('百度地图API加载成功');
+};
+</script>
+<script type="text/javascript" src="https://api.map.baidu.com/api?v=3.0&ak={{ baidu_map_ak }}&services=true&callback=baiduMapLoadCallback"></script>
+{% endif %}
+<!-- 高德地图 API -->
+{% if amap_key %}
+<script type="text/javascript">
+window.amapLoaded = false;
+window.amapLoadCallback = function() {
+    window.amapLoaded = true;
+    console.log('高德地图API加载成功');
+};
+</script>
+<script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key={{ amap_key }}&callback=amapLoadCallback"></script>
+{% endif %}
+
+<script>
+    // 检查地图API是否加载
+    var baiduMapLoaded = typeof BMap !== 'undefined';
+    var amapLoaded = typeof AMap !== 'undefined';
+    
+    // 全局变量
+    var currentMapType = 'baidu';
+    var baiduMap = null;
+    var amap = null;
+    
+    var selectionMode = null;
+    var startPoint = null;
+    var endPoint = null;
+    var selectedSpots = [];
+    var markers = [];
+    var routeMarkers = [];
+    var routePolyline = null;
+    var realRouteSegments = [];
+    var baiduRouteOverlays = [];
+    var currentRouteData = null;
+    var activeBlinkSegmentIndex = -1;
+    var blinkTimer = null;
+    var blinkVisible = true;
+    var segmentFocusOverlay = { baidu: null, amap: null };
+    var segmentRealPolylineCache = {};
+    var segmentBlinkRequestToken = 0;
+    var currentFocusedSegmentIndex = null;
+    var hideManualEndpointMarkers = false;
+    
+    var hotelPoint = {
+        lng: 101.7782,
+        lat: 36.6171
+    };
+    
+    // 初始化百度地图
+    function initBaiduMap() {
+        if (!baiduMapLoaded) {
+            console.warn('百度地图API未加载');
+            document.getElementById('baiduMap').innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">百度地图API未配置或加载失败<br>请联系管理员配置BAIDU_MAP_AK环境变量</div>';
+            return;
+        }
+        
+        baiduMap = new BMap.Map("baiduMap");
+        var point = new BMap.Point(hotelPoint.lng, hotelPoint.lat);
+        baiduMap.centerAndZoom(point, 12);
+        baiduMap.enableScrollWheelZoom(true);
+        baiduMap.addControl(new BMap.NavigationControl());
+        baiduMap.addControl(new BMap.ScaleControl());
+        
+        // 添加起点标记
+        var hotelContent = `
+            <div class="custom-hotel-marker">
+                <div class="marker-pulse"></div>
+                <div class="inner-icon">📍</div>
+            </div>
+        `;
+        var label = new BMap.Label(hotelContent, {
+            position: point,
+            offset: new BMap.Size(-20, -40) // 居中对齐
+        });
+        label.setStyle({ border: "none", background: "transparent" });
+        baiduMap.addOverlay(label);
+        var infoWindow = new BMap.InfoWindow("<div style='font-weight:bold;'>📍 起点</div>");
+        label.addEventListener("click", function() { this.openInfoWindow(infoWindow); });
+        
+        // 添加点击事件
+        baiduMap.addEventListener('click', handleMapClick);
+    }
+    
+    // 初始化高德地图
+    function initAMap() {
+        if (!amapLoaded) {
+            console.warn('高德地图API未加载');
+            document.getElementById('amapContainer').innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">高德地图API未配置或加载失败<br>请联系管理员配置AMAP_AK环境变量</div>';
+            return;
+        }
+        
+        amap = new AMap.Map('amapContainer', {
+            zoom: 12,
+            center: [hotelPoint.lng, hotelPoint.lat],
+            showZoomBar: false,
+            showScaleBar: false
+        });
+        
+        // 添加起点标记
+        var hotelMarker = new AMap.Marker({
+            position: [hotelPoint.lng, hotelPoint.lat],
+            content: `
+                <div class="custom-hotel-marker">
+                    <div class="marker-pulse"></div>
+                    <div class="inner-icon">📍</div>
+                </div>
+            `,
+            offset: new AMap.Pixel(-20, -40)
+        });
+        amap.add(hotelMarker);
+        
+        // 添加信息窗口
+        var infoWindow = new AMap.InfoWindow({
+            content: "<div style='font-weight:bold;'>📍 起点</div>",
+            offset: new AMap.Pixel(0, -20)
+        });
+        hotelMarker.on('click', function() {
+            infoWindow.open(amap, hotelMarker.getPosition());
+        });
+        
+        // 添加点击事件
+        amap.on('click', handleAMapClick);
+    }
+    
+    // 切换地图
+    function switchMap(type) {
+        // 检查目标地图API是否加载
+        if (type === 'baidu' && !baiduMapLoaded) {
+            alert('百度地图API未配置，无法切换到百度地图');
+            return;
+        }
+        if (type === 'amap' && !amapLoaded) {
+            alert('高德地图API未配置，无法切换到高德地图');
+            return;
+        }
+        
+        currentMapType = type;
+        
+        // 更新按钮样式
+        document.querySelectorAll('.map-switch-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        if (event && event.target) {
+            event.target.classList.add('active');
+        }
+        
+        if (type === 'baidu') {
+            document.getElementById('baiduMap').style.display = 'block';
+            document.getElementById('amapContainer').style.display = 'none';
+        } else {
+            document.getElementById('baiduMap').style.display = 'none';
+            document.getElementById('amapContainer').style.display = 'block';
+            if (!amap) {
+                initAMap();
+            }
+        }
+        
+        // 同步标记
+        syncMarkers();
+    }
+
+    // 回到初始点
+    function resetMapView() {
+        if (baiduMap && window.BMap) {
+            var bPoint = new BMap.Point(hotelPoint.lng, hotelPoint.lat);
+            baiduMap.centerAndZoom(bPoint, 12);
+        }
+        if (amap) {
+            amap.setZoomAndCenter(12, [hotelPoint.lng, hotelPoint.lat]);
+        }
+    }
+    
+    // 设置选择模式
+    function setMode(mode) {
+        selectionMode = mode;
+        
+        // 更新按钮样式
+        document.getElementById('btnStart').classList.toggle('active', mode === 'start');
+        document.getElementById('btnEnd').classList.toggle('active', mode === 'end');
+        document.getElementById('btnSpot').classList.toggle('active', mode === 'spot');
+    }
+    
+    // 取消设置模式
+    function cancelMode() {
+        selectionMode = null;
+        
+        // 清除按钮样式
+        document.getElementById('btnStart').classList.remove('active');
+        document.getElementById('btnEnd').classList.remove('active');
+        document.getElementById('btnSpot').classList.remove('active');
+    }
+    
+    // 处理百度地图点击
+    function handleMapClick(e) {
+        if (!selectionMode) {
+            alert('请先点击"设置起点"、"设置终点"或"添加途经景点"按钮');
+            return;
+        }
+        
+        var point = {
+            lng: e.point.lng,
+            lat: e.point.lat
+        };
+        
+        processSelection(point);
+    }
+    
+    // 处理高德地图点击
+    function handleAMapClick(e) {
+        if (!selectionMode) {
+            alert('请先点击"设置起点"、"设置终点"或"添加途经景点"按钮');
+            return;
+        }
+        
+        var point = {
+            lng: e.lnglat.getLng(),
+            lat: e.lnglat.getLat()
+        };
+        
+        processSelection(point);
+    }
+    
+    // 处理选择
+    function processSelection(point) {
+        // 获取地址名称
+        getAddressName(point, function(name) {
+            if (selectionMode === 'start') {
+                hideManualEndpointMarkers = false;
+                startPoint = { ...point, name: name };
+                document.getElementById('startStatus').textContent = name;
+            } else if (selectionMode === 'end') {
+                hideManualEndpointMarkers = false;
+                endPoint = { ...point, name: name };
+                document.getElementById('endStatus').textContent = name;
+            } else if (selectionMode === 'spot') {
+                selectedSpots.push({ ...point, name: name });
+                updateSpotsList();
+            }
+            
+            syncMarkers();
+        });
+    }
+    
+    // 获取地址名称
+    function getAddressName(point, callback) {
+        if (currentMapType === 'baidu') {
+            var geocoder = new BMap.Geocoder();
+            var bPoint = new BMap.Point(point.lng, point.lat);
+            geocoder.getLocation(bPoint, function(result) {
+                if (result) {
+                    callback(result.address);
+                } else {
+                    callback('自定义位置');
+                }
+            });
+        } else {
+            AMap.plugin('AMap.Geocoder', function() {
+                var geocoder = new AMap.Geocoder();
+                geocoder.getAddress([point.lng, point.lat], function(status, result) {
+                    if (status === 'complete' && result.regeocode) {
+                        callback(result.regeocode.formattedAddress);
+                    } else {
+                        callback('自定义位置');
+                    }
+                });
+            });
+        }
+    }
+    
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    // 更新景点列表
+    function updateSpotsList() {
+        document.getElementById('spotStatus').textContent = selectedSpots.length + ' 个途经景点';
+        
+        var html = '';
+        selectedSpots.forEach(function(spot, index) {
+            html += '<div class="spot-item" data-index="' + index + '" title="右键删除">';
+            html += '<div class="spot-number">' + (index + 1) + '</div>';
+            html += '<div class="spot-name">' + escapeHtml(spot.name) + '</div>';
+            html += '<button class="spot-remove" data-index="' + index + '">×</button>';
+            html += '</div>';
+        });
+        
+        var spotsList = document.getElementById('spotsList');
+        spotsList.innerHTML = html;
+
+        // 列表项右键删除
+        spotsList.querySelectorAll('.spot-item').forEach(function(item) {
+            item.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                var idx = parseInt(this.getAttribute('data-index'), 10);
+                removeSpot(idx);
+            });
+        });
+
+        // 删除按钮点击
+        spotsList.querySelectorAll('.spot-remove').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var idx = parseInt(this.getAttribute('data-index'), 10);
+                removeSpot(idx);
+            });
+        });
+    }
+    
+    // 删除景点
+    function removeSpot(index) {
+        selectedSpots.splice(index, 1);
+        updateSpotsList();
+        syncMarkers();
+    }
+    
+    // 同步标记到两个地图
+    function syncMarkers() {
+        // 清除现有标记
+        clearMarkers();
+        
+        // 添加起点标记
+        if (startPoint && !hideManualEndpointMarkers) {
+            addMarker(startPoint, 'start', '起');
+        }
+        
+        // 添加终点标记
+        if (endPoint && !hideManualEndpointMarkers) {
+            addMarker(endPoint, 'end', '终');
+        }
+        
+        // 添加景点标记
+        selectedSpots.forEach(function(spot, index) {
+            addMarker(spot, 'spot', index + 1, index);
+        });
+    }
+    
+    // 添加标记
+    function addMarker(point, type, label, spotIndex) {
+        var color = type === 'start' ? '#4caf50' : (type === 'end' ? '#f44336' : '#2196f3');
+        
+        // 确定CSS类
+        var cssClass = '';
+        if (type === 'start') {
+            cssClass = 'custom-start-marker';
+        } else if (type === 'end') {
+            cssClass = 'custom-end-marker';
+        } else {
+            cssClass = 'custom-spot-marker';
+        }
+        
+        // 百度地图标记
+        if (baiduMap) {
+            var bPoint = new BMap.Point(point.lng, point.lat);
+            // 创建自定义标签，添加title属性以显示地点名称
+            var labelContent = `
+                <div class="${cssClass}" title="${point.name}">
+                    ${label}
+                </div>
+            `;
+            var bLabel = new BMap.Label(labelContent, {
+                position: bPoint,
+                offset: new BMap.Size(-20, -20) // 居中偏移
+            });
+            bLabel.setStyle({ border: "none", background: "transparent" });
+            baiduMap.addOverlay(bLabel);
+            // 保留右键删除功能（仅限途经点）
+            if (type === 'spot' && typeof spotIndex === 'number') {
+                bLabel.addEventListener('rightclick', function(e) {
+                    if (e && e.domEvent) {
+                        e.domEvent.preventDefault();
+                    }
+                    removeSpot(spotIndex);
+                });
+            }
+            markers.push({ map: 'baidu', marker: bLabel });
+        }
+        
+        // 高德地图标记
+        if (amap) {
+            var labelContent = `
+                <div class="${cssClass}" title="${point.name}">
+                    ${label}
+                </div>
+            `;
+            var aMarker = new AMap.Marker({
+                position: [point.lng, point.lat],
+                content: labelContent,
+                offset: new AMap.Pixel(-20, -20),
+                title: point.name // 同时设置title属性以备后用
+            });
+            if (type === 'spot' && typeof spotIndex === 'number') {
+                aMarker.on('rightclick', function() {
+                    removeSpot(spotIndex);
+                });
+            }
+            amap.add(aMarker);
+            markers.push({ map: 'amap', marker: aMarker });
+        }
+    }
+    
+    // 清除标记
+    function clearMarkers() {
+        markers.forEach(function(item) {
+            if (item.map === 'baidu' && baiduMap) {
+                baiduMap.removeOverlay(item.marker);
+            } else if (item.map === 'amap' && amap) {
+                amap.remove(item.marker);
+            }
+        });
+        markers = [];
+    }
+    
+    // 清空所有
+    function clearAll() {
+        hideManualEndpointMarkers = false;
+        startPoint = null;
+        endPoint = null;
+        selectedSpots = [];
+        
+        document.getElementById('startStatus').textContent = '未设置';
+        document.getElementById('endStatus').textContent = '未设置';
+        document.getElementById('spotStatus').textContent = '0 个途经景点';
+        document.getElementById('spotsList').innerHTML = '';
+        
+        clearMarkers();
+
+        // 清除路线（真实路线 / 百度驾车路线 overlay / 直线路线）
+        clearRealRoute();
+        
+        if (routePolyline) {
+            if (baiduMap) baiduMap.removeOverlay(routePolyline.baidu);
+            if (amap && routePolyline.amap) amap.remove(routePolyline.amap);
+            routePolyline = null;
+        }
+        
+        if (realRouteSegments) {
+            realRouteSegments.forEach(function(segment) {
+                if (segment.baiduPolyline && baiduMap) {
+                    baiduMap.removeOverlay(segment.baiduPolyline);
+                }
+                if (segment.amapPolyline && amap) {
+                    amap.remove(segment.amapPolyline);
+                }
+            });
+            realRouteSegments = [];
+        }
+        
+        closeResult();
+    }
+    
+    // 开始规划
+    function startPlanning() {
+        if (!startPoint) {
+            alert('请先设置起点');
+            return;
+        }
+        if (!endPoint) {
+            alert('请先设置终点');
+            return;
+        }
+        
+        // 显示加载状态
+        document.getElementById('loadingOverlay').classList.add('show');
+        
+        // 准备请求数据
+        var requestData = {
+            start_point: {
+                longitude: startPoint.lng,
+                latitude: startPoint.lat,
+                name: startPoint.name
+            },
+            end_point: {
+                longitude: endPoint.lng,
+                latitude: endPoint.lat,
+                name: endPoint.name
+            },
+            spots: selectedSpots.map(function(spot) {
+                return {
+                    longitude: spot.lng,
+                    latitude: spot.lat,
+                    name: spot.name
+                };
+            }),
+            map_type: currentMapType
+        };
+        
+        // 发送请求
+        fetch('/api/plan-custom-route/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(requestData)
+        })
+        .then(response => {
+            // 检查响应状态
+            if (!response.ok) {
+                // 如果是401未授权，提示用户登录
+                if (response.status === 401) {
+                    throw new Error('请先登录后再使用此功能');
+                }
+                throw new Error('服务器错误：' + response.status);
+            }
+            
+            // 检查响应是否为JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('服务器返回了非JSON响应，可能是未登录或服务器错误');
+            }
+            
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('loadingOverlay').classList.remove('show');
+            
+            if (data.success) {
+                displayResult(data.data);
+                drawRealRoute(data.data);
+            } else {
+                alert('规划失败：' + data.error);
+            }
+        })
+        .catch(error => {
+            document.getElementById('loadingOverlay').classList.remove('show');
+            alert('网络错误：' + error.message);
+        });
+    }
+    
+    // 显示结果
+    function displayResult(data) {
+        currentRouteData = data || null;
+        segmentRealPolylineCache = {};
+        clearSegmentBlink();
+        hideManualEndpointMarkers = true;
+        syncMarkers();
+        var totalStopsCount = (data && data.spots ? data.spots.length : 0);
+
+        // 显示摘要（使用后端API返回的真实数据）
+        var summaryHtml = `
+            <div class="summary-item">
+                <div class="summary-value">${data.total_time_formatted}</div>
+                <div class="summary-label">预计时长</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value">${data.total_distance}公里</div>
+                <div class="summary-label">总距离</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value">${totalStopsCount}</div>
+                <div class="summary-label">总点位数</div>
+            </div>
+        `;
+        document.getElementById('resultSummary').innerHTML = summaryHtml;
+        
+        // 更新总距离和总时间的计算逻辑
+        updateTotalCalculations(data);
+    }
+    
+    // 更新总距离和总时间计算逻辑
+    function updateTotalCalculations(data) {
+        if (!data.segments || data.segments.length === 0) {
+            return;
+        }
+        
+        var totalDistance = 0;
+        var totalTime = 0;
+        
+        // 计算每个路段的距离和时间
+        data.segments.forEach(function(segment, index) {
+            if (segment.distance_num && segment.duration_num) {
+                totalDistance += segment.distance_num;
+                totalTime += segment.duration_num;
+            }
+        });
+        
+        // 验证计算结果是否与后端返回的数据一致
+        var backendDistance = parseFloat(data.total_distance);
+        var backendTime = parseInt(data.total_time);
+        
+        console.log('路段数据计算结果:');
+        console.log('- 计算总距离:', totalDistance, '公里');
+        console.log('- 后端总距离:', backendDistance, '公里');
+        console.log('- 计算总时间:', totalTime, '分钟');
+        console.log('- 后端总时间:', backendTime, '分钟');
+        
+        // 如果计算结果与后端数据有较大差异，显示警告
+        if (Math.abs(totalDistance - backendDistance) > 0.1) {
+            console.warn('距离计算不一致，请检查路段数据');
+        }
+        if (Math.abs(totalTime - backendTime) > 1) {
+            console.warn('时间计算不一致，请检查路段数据');
+        }
+        
+        // 显示路线（包含到达时间估算）
+        var routeHtml = '';
+        data.spots.forEach(function(spot, index) {
+            var isStart = index === 0;
+            var isEnd = index === data.spots.length - 1;
+            var stopClass = isStart ? 'start' : (isEnd ? 'end' : '');
+
+            routeHtml += '<div class="route-stop ' + stopClass + '" data-stop-index="' + index + '">';
+            routeHtml += '<div class="stop-marker">' + (index + 1) + '</div>';
+            routeHtml += '<div class="stop-info">';
+            routeHtml += '<div class="stop-name">' + escapeHtml(spot.name) + '</div>';
+            routeHtml += '<div class="stop-address">' + escapeHtml(spot.address || '') + '</div>';
+            
+            // 显示到达时间（如果有）
+            if (spot.arrival_time_formatted) {
+                if (isStart) {
+                    routeHtml += '<div class="stop-time">初始起点</div>';
+                } else {
+                    routeHtml += '<div class="stop-time">到达时间: ' + spot.arrival_time_formatted + '</div>';
+                }
+            }
+            
+            // 显示途经地点标签（如果是途经点）
+            if (!isStart && !isEnd) {
+                routeHtml += '<div class="stop-duration">途经路途地点</div>';
+            }
+            
+            routeHtml += '</div>';
+            routeHtml += '</div>';
+            
+            // 添加路段信息（显示从当前景点到下一个景点）
+            if (data.segments && data.segments[index]) {
+                var seg = data.segments[index];
+                routeHtml += '<div class="route-segment">';
+                routeHtml += '<div class="segment-distance">📍 ' + Number(seg.distance).toFixed(2) + '公里</div>';
+                routeHtml += '<div class="segment-time">⏱️ ' + Math.round(seg.duration) + '分钟</div>';
+                routeHtml += '</div>';
+            } else if (index < data.spots.length - 1) {
+                // 如果没有segments数据，显示默认信息
+                routeHtml += '<div class="route-segment">↓ 路段信息待获取</div>';
+            }
+        });
+        document.getElementById('resultRoute').innerHTML = routeHtml;
+        bindRouteStopClickEvents();
+        
+        // 调整到达时间显示样式
+        adjustArrivalTimeDisplay(data);
+    }
+
+    function bindRouteStopClickEvents() {
+        var routeContainer = document.getElementById('resultRoute');
+        if (!routeContainer) return;
+        routeContainer.querySelectorAll('.route-stop').forEach(function(cardEl) {
+            cardEl.addEventListener('click', function() {
+                var stopIndex = parseInt(cardEl.getAttribute('data-stop-index'), 10);
+                if (isNaN(stopIndex)) return;
+
+                // 更新卡片选中状态
+                routeContainer.querySelectorAll('.route-stop').forEach(function(el) {
+                    var idx = parseInt(el.getAttribute('data-stop-index'), 10);
+                    el.classList.toggle('is-selected', idx === stopIndex);
+                });
+
+                // 起点没有“上一段路线”，仅保留卡片选中态
+                if (stopIndex <= 0) {
+                    clearSegmentBlink();
+                    restoreAllSegments();
+                    return;
+                }
+
+                var segmentIndex = stopIndex - 1;
+                // 如果当前路段已处于聚焦状态，则恢复全部
+                if (currentFocusedSegmentIndex === segmentIndex) {
+                    restoreAllSegments();
+                } else {
+                    focusSegment(segmentIndex);
+                }
+            });
+        });
+    }
+
+    function handleStopCardSelected(stopIndex) {
+        var routeContainer = document.getElementById('resultRoute');
+        if (!routeContainer) return;
+
+        routeContainer.querySelectorAll('.route-stop').forEach(function(cardEl) {
+            var idx = parseInt(cardEl.getAttribute('data-stop-index'), 10);
+            cardEl.classList.toggle('is-selected', idx === stopIndex);
+        });
+
+        // 起点没有“上一段路线”，仅保留卡片选中态
+        if (stopIndex <= 0) {
+            clearSegmentBlink();
+            restoreAllSegments();
+            return;
+        }
+
+        var segmentIndex = stopIndex - 1;
+        // 如果当前路段已处于聚焦状态，则恢复全部
+        if (currentFocusedSegmentIndex === segmentIndex) {
+            restoreAllSegments();
+            return;
+        }
+
+        // 否则聚焦该路段
+        focusSegment(segmentIndex);
+    }
+
+    function getSegmentForHighlight(segmentIndex) {
+        if (realRouteSegments && realRouteSegments[segmentIndex]) {
+            return realRouteSegments[segmentIndex];
+        }
+        if (currentRouteData && currentRouteData.segments && currentRouteData.segments[segmentIndex]) {
+            return currentRouteData.segments[segmentIndex];
+        }
+        return { index: segmentIndex };
+    }
+
+    async function ensureSegmentPolylineForBlink(segment, segmentIndex) {
+        if (!segment) return null;
+
+        if (segment.polyline && segment.polyline.length >= 2) {
+            return segment;
+        }
+
+        if (segmentRealPolylineCache[segmentIndex] && segmentRealPolylineCache[segmentIndex].length >= 2) {
+            segment.polyline = segmentRealPolylineCache[segmentIndex];
+            return segment;
+        }
+
+        var fetchedPolyline = await fetchSegmentPolylineByApi(segmentIndex);
+        if (fetchedPolyline && fetchedPolyline.length >= 2) {
+            segmentRealPolylineCache[segmentIndex] = fetchedPolyline;
+            segment.polyline = fetchedPolyline;
+            return segment;
+        }
+
+        return null;
+    }
+
+    async function fetchSegmentPolylineByApi(segmentIndex) {
+        if (!currentRouteData || !currentRouteData.spots) return null;
+        var fromSpot = currentRouteData.spots[segmentIndex];
+        var toSpot = currentRouteData.spots[segmentIndex + 1];
+        if (!fromSpot || !toSpot) return null;
+
+        try {
+            var response = await fetch('/api/get-real-route/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    from: {
+                        longitude: parseFloat(fromSpot.longitude || fromSpot.lng || 0),
+                        latitude: parseFloat(fromSpot.latitude || fromSpot.lat || 0),
+                        name: fromSpot.name || '起点',
+                        address: fromSpot.address || ''
+                    },
+                    to: {
+                        longitude: parseFloat(toSpot.longitude || toSpot.lng || 0),
+                        latitude: parseFloat(toSpot.latitude || toSpot.lat || 0),
+                        name: toSpot.name || '终点',
+                        address: toSpot.address || ''
+                    },
+                    map_type: currentMapType
+                })
+            });
+            if (!response.ok) return null;
+            var result = await response.json();
+            if (!result || !result.success || !result.data || !Array.isArray(result.data.polyline)) {
+                return null;
+            }
+
+            var normalized = result.data.polyline.map(function(p) {
+                if (Array.isArray(p)) {
+                    return { lng: parseFloat(p[0]), lat: parseFloat(p[1]) };
+                }
+                if (p && typeof p.lng !== 'undefined' && typeof p.lat !== 'undefined') {
+                    return { lng: parseFloat(p.lng), lat: parseFloat(p.lat) };
+                }
+                if (p && typeof p.longitude !== 'undefined' && typeof p.latitude !== 'undefined') {
+                    return { lng: parseFloat(p.longitude), lat: parseFloat(p.latitude) };
+                }
+                return null;
+            }).filter(function(p) {
+                return p && !isNaN(p.lng) && !isNaN(p.lat);
+            });
+
+            return normalized.length >= 2 ? normalized : null;
+        } catch (error) {
+            console.warn('补齐路段几何失败:', error);
+            return null;
+        }
+    }
+
+    function ensureSegmentBaseStyle(segment) {
+        if (!segment) return;
+        if (!segment._baseStyle) {
+            segment._baseStyle = {
+                color: segment.routeColor || '#667eea',
+                weight: segment.routeWeight || 4,
+                opacity: segment.routeOpacity || 0.8
+            };
+        }
+    }
+
+    function applySegmentStyle(segment, style) {
+        if (!segment || !style) return;
+        ensureSegmentBaseStyle(segment);
+
+        if (segment.baiduPolyline) {
+            try {
+                segment.baiduPolyline.setStrokeColor(style.color);
+                segment.baiduPolyline.setStrokeWeight(style.weight);
+                segment.baiduPolyline.setStrokeOpacity(style.opacity);
+            } catch (error) {}
+        }
+
+        if (segment.amapPolyline) {
+            try {
+                segment.amapPolyline.setOptions({
+                    strokeColor: style.color,
+                    strokeWeight: style.weight,
+                    strokeOpacity: style.opacity
+                });
+            } catch (error) {}
+        }
+    }
+
+    function clearSegmentFocusOverlay() {
+        if (segmentFocusOverlay.baidu && baiduMap) {
+            try { baiduMap.removeOverlay(segmentFocusOverlay.baidu); } catch (e) {}
+        }
+        if (segmentFocusOverlay.amap && amap) {
+            try { amap.remove(segmentFocusOverlay.amap); } catch (e) {}
+        }
+        segmentFocusOverlay.baidu = null;
+        segmentFocusOverlay.amap = null;
+    }
+
+    function drawSegmentFocusOverlay(segment) {
+        clearSegmentFocusOverlay();
+        if (!segment || !segment.polyline || !segment.polyline.length) return;
+
+        if (baiduMap && window.BMap) {
+            try {
+                var bPoints = segment.polyline.map(function(p) { return new BMap.Point(p.lng, p.lat); });
+                segmentFocusOverlay.baidu = new BMap.Polyline(bPoints, {
+                    strokeColor: '#FF0000',
+                    strokeWeight: 10,
+                    strokeOpacity: 0.95,
+                    strokeStyle: 'dashed'
+                });
+                baiduMap.addOverlay(segmentFocusOverlay.baidu);
+            } catch (error) {}
+        }
+
+        if (amap && window.AMap) {
+            try {
+                var aPath = segment.polyline.map(function(p) { return [p.lng, p.lat]; });
+                segmentFocusOverlay.amap = new AMap.Polyline({
+                    path: aPath,
+                    strokeColor: '#FF0000',
+                    strokeWeight: 10,
+                    strokeOpacity: 0.95,
+                    strokeStyle: 'dashed'
+                });
+                amap.add(segmentFocusOverlay.amap);
+            } catch (error) {}
+        }
+    }
+
+    function applySegmentHighlightFrame(segment, visible) {
+        console.log('applySegmentHighlightFrame', segment, visible);
+        if (!segment) return;
+
+        if (segment.baiduPolyline || segment.amapPolyline) {
+            ensureSegmentBaseStyle(segment);
+            if (visible) {
+                applySegmentStyle(segment, { color: '#FFEB3B', weight: 6, opacity: 0.9 });
+            } else {
+                applySegmentStyle(segment, segment._baseStyle);
+            }
+            return;
+        }
+
+        // 无已绘制分段线时，使用临时覆盖层闪烁
+        if (visible) {
+            drawSegmentFocusOverlay(segment);
+        } else {
+            clearSegmentFocusOverlay();
+        }
+    }
+
+    function clearSegmentBlink() {
+        segmentBlinkRequestToken += 1;
+
+        if (blinkTimer) {
+            clearInterval(blinkTimer);
+            blinkTimer = null;
+        }
+
+        if (activeBlinkSegmentIndex >= 0) {
+            var prevSegment = getSegmentForHighlight(activeBlinkSegmentIndex);
+            if (prevSegment && prevSegment._baseStyle) {
+                applySegmentStyle(prevSegment, prevSegment._baseStyle);
+            }
+        }
+
+        clearSegmentFocusOverlay();
+        activeBlinkSegmentIndex = -1;
+        blinkVisible = true;
+    }
+
+    // 新增 focusSegment 函数
+    function focusSegment(segmentIndex) {
+        // 先清除当前聚焦状态
+        if (currentFocusedSegmentIndex !== null) {
+            restoreAllSegments();
+        }
+
+        const segment = getSegmentForHighlight(segmentIndex);
+        if (!segment) return;
+
+        // 更新全局状态
+        currentFocusedSegmentIndex = segmentIndex;
+
+        // 第二步：高亮当前路段
+        ensureSegmentBaseStyle(segment);
+        applySegmentStyle(segment, {
+            color: '#FFEB3B',
+            weight: 6,
+            opacity: 0.9
+        });
+
+        // 第三步：自动缩放至当前路段（同时支持百度地图和高德地图）
+        if (segment.polyline && segment.polyline.length > 0) {
+            if (baiduMap && window.BMap) {
+                const bounds = new BMap.Bounds();
+                segment.polyline.forEach(p => {
+                    bounds.extend(new BMap.Point(p.lng, p.lat));
+                });
+                baiduMap.setViewport(bounds);
+            } else if (amap && window.AMap) {
+                const path = segment.polyline.map(p => [p.lng, p.lat]);
+                const bounds = new AMap.Bounds(path[0], path[0]);
+                path.forEach(p => bounds.extend(p));
+                amap.setFitView([new AMap.Polyline({ path })], false, [60, 60, 60, 60]);
+            }
+        }
+
+        // 第四步：在结果面板中突出显示对应卡片
+        highlightCardForSegment(segmentIndex);
+    }
+
+    // 新增 restoreAllSegments 函数
+    function restoreAllSegments() {
+        if (currentFocusedSegmentIndex === null) return;
+
+        // 恢复所有路段的原始样式
+        realRouteSegments.forEach((s, idx) => {
+            if (s._baseStyle) {
+                applySegmentStyle(s, s._baseStyle);
+            }
+        });
+
+        // 清空全局聚焦索引
+        currentFocusedSegmentIndex = null;
+
+        // 恢复原始地图视图（可选）
+        // resetMapView();
+    }
+
+    // 辅助函数：在结果面板中高亮对应卡片
+    function highlightCardForSegment(segmentIndex) {
+        // 移除之前的高亮
+        document.querySelectorAll('.route-stop.highlighted').forEach(card => {
+            card.classList.remove('highlighted');
+        });
+        // 根据 data-stop-index 查找卡片（stopIndex = segmentIndex + 1）
+        const card = document.querySelector(`.route-stop[data-stop-index="${segmentIndex + 1}"]`);
+        if (card) {
+            card.classList.add('highlighted');
+        }
+    }
+
+    async function startSegmentBlink(segmentIndex) {
+        clearSegmentBlink();
+        console.log('开始闪烁路段', segmentIndex);
+        var requestToken = segmentBlinkRequestToken;
+
+        var targetSegment = getSegmentForHighlight(segmentIndex);
+        if (!targetSegment) return;
+        targetSegment = await ensureSegmentPolylineForBlink(targetSegment, segmentIndex);
+        if (requestToken !== segmentBlinkRequestToken) return;
+        if (!targetSegment || !targetSegment.polyline || targetSegment.polyline.length < 2) {
+            console.warn('当前路段缺少可高亮的真实几何，已跳过闪烁。segmentIndex=', segmentIndex);
+            return;
+        }
+
+        activeBlinkSegmentIndex = segmentIndex;
+        blinkVisible = true;
+        applySegmentHighlightFrame(targetSegment, true);
+
+        blinkTimer = setInterval(function() {
+            if (requestToken !== segmentBlinkRequestToken) {
+                clearInterval(blinkTimer);
+                blinkTimer = null;
+                return;
+            }
+            var currentSegment = getSegmentForHighlight(activeBlinkSegmentIndex);
+            if (!currentSegment) return;
+            blinkVisible = !blinkVisible;
+            applySegmentHighlightFrame(currentSegment, blinkVisible);
+        }, 420);
+    }
+    
+    // 调整到达时间显示
+    function adjustArrivalTimeDisplay(data) {
+        if (!data.arrival_times) {
+            return;
+        }
+        
+        console.log('到达时间数据:', data.arrival_times);
+        
+        // 验证到达时间计算的准确性
+        var totalTravelTime = 0;
+        data.arrival_times.forEach(function(timeInfo, index) {
+            if (index > 0) {
+                totalTravelTime += timeInfo.arrival_time;
+                console.log(`景点 ${index + 1} (${timeInfo.spot_name}): ${timeInfo.arrival_time_formatted} (累计: ${timeInfo.arrival_time}分钟)`);
+            }
+        });
+        
+        console.log('总行程时间:', totalTravelTime, '分钟');
+        console.log('后端API返回总时间:', data.total_time, '分钟');
+        
+        // 如果时间计算有较大差异，显示警告
+        if (Math.abs(totalTravelTime - data.total_time) > 5) {
+            console.warn('到达时间计算与总时间有差异，请检查计算逻辑');
+        }
+        
+        // 显示结果面板
+        document.getElementById('resultPanel').classList.add('show');
+    }
+    
+    // 绘制真实路线
+    function drawRealRoute(data) {
+        // 清除现有路线
+        clearRealRoute();
+        
+        if (!data || !Array.isArray(data.spots) || data.spots.length < 2) {
+            console.error('Invalid route data for real route drawing');
+            return;
+        }
+        
+        // 显示加载状态
+        document.getElementById('loadingOverlay').classList.add('show');
+        document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = '正在使用蚁群算法规划最优路线...';
+        
+        var spots = data.spots || [];
+        var requestSegments = buildSegmentsFromSpotsAndData(spots, data.segments || []);
+
+        // 先尝试使用后端已返回的真实 polyline；不完整则补全
+        var hasAnyRealRoute = requestSegments.some(function(segment) {
+            return segment && segment.polyline && segment.polyline.length > 0;
+        });
+        var hasMissingPolyline = requestSegments.some(function(segment) {
+            return !segment || !segment.polyline || segment.polyline.length === 0;
+        });
+
+        if (hasAnyRealRoute && !hasMissingPolyline) {
+            realRouteSegments = requestSegments;
+            processRouteSegments(requestSegments);
+            setTimeout(function() {
+                document.getElementById('loadingOverlay').classList.remove('show');
+                drawRealRouteOnMap(requestSegments);
+            }, 300);
+            return;
+        }
+
+        getRealRouteData(requestSegments, function(realSegments) {
+            document.getElementById('loadingOverlay').classList.remove('show');
+
+            var mergedSegments = requestSegments.map(function(seg, idx) {
+                var fetched = realSegments && realSegments[idx] ? realSegments[idx] : null;
+                if (fetched && fetched.polyline && fetched.polyline.length > 0) {
+                    return Object.assign({}, seg, fetched, { index: idx, from: seg.from, to: seg.to });
+                }
+                return Object.assign({}, seg, { index: idx });
+            });
+
+            var hasRealAfterFetch = mergedSegments.some(function(seg) {
+                return seg && seg.polyline && seg.polyline.length > 0;
+            });
+
+            if (hasRealAfterFetch) {
+                realRouteSegments = mergedSegments;
+                processRouteSegments(mergedSegments);
+                drawRealRouteOnMap(mergedSegments);
+                return;
+            }
+
+            // 最后兜底：百度地图优先用驾车导航结果，避免直线
+            if (currentMapType === 'baidu' && baiduMap && window.BMap) {
+                console.warn('未获取到分段 polyline，降级为百度驾车导航路线');
+                drawBaiduDrivingRoute(spots);
+                return;
+            }
+
+            console.warn('未获取到真实路线数据，降级为直线路线');
+            drawStraightRoute(spots);
+        });
+    }
+
+    function buildSegmentsFromSpotsAndData(spots, rawSegments) {
+        var segments = [];
+        if (!spots || spots.length < 2) return segments;
+
+        function normalizePolyline(poly) {
+            if (!poly || !Array.isArray(poly)) return [];
+            return poly.map(function(p) {
+                if (Array.isArray(p)) {
+                    return { lng: parseFloat(p[0]), lat: parseFloat(p[1]) };
+                }
+                if (p && typeof p.lng !== 'undefined' && typeof p.lat !== 'undefined') {
+                    return { lng: parseFloat(p.lng), lat: parseFloat(p.lat) };
+                }
+                if (p && typeof p.longitude !== 'undefined' && typeof p.latitude !== 'undefined') {
+                    return { lng: parseFloat(p.longitude), lat: parseFloat(p.latitude) };
+                }
+                return null;
+            }).filter(function(p) {
+                return p && !isNaN(p.lng) && !isNaN(p.lat);
+            });
+        }
+
+        for (var i = 0; i < spots.length - 1; i++) {
+            var base = (rawSegments && rawSegments[i]) ? rawSegments[i] : {};
+            segments.push(Object.assign({}, base, {
+                index: i,
+                from: spots[i],
+                to: spots[i + 1],
+                polyline: normalizePolyline(base.polyline)
+            }));
+        }
+        return segments;
+    }
+    
+    // 处理路径点集合并
+    function processRouteSegments(segments) {
+        if (!segments || segments.length === 0) {
+            return;
+        }
+        
+        // 检查是否有重叠的路径点，进行合并优化
+        for (var i = 0; i < segments.length - 1; i++) {
+            var currentSegment = segments[i];
+            var nextSegment = segments[i + 1];
+            
+            // 检查当前路段的终点是否与下一段的起点非常接近
+            if (currentSegment.to_spot && nextSegment.from_spot) {
+                var currentEnd = currentSegment.to_spot;
+                var nextStart = nextSegment.from_spot;
+                
+                // 计算两点之间的距离（简化计算）
+                var distance = Math.sqrt(
+                    Math.pow(currentEnd.longitude - nextStart.longitude, 2) +
+                    Math.pow(currentEnd.latitude - nextStart.latitude, 2)
+                );
+                
+                // 如果距离小于阈值（约10米），则进行合并
+                if (distance < 0.0001) { // 约10米的阈值
+                    console.log('发现相邻路段，进行合并处理:', currentSegment.to, '->', nextSegment.from);
+                    
+                    // 可以在这里添加更多的合并逻辑，比如合并polyline等
+                    // 目前只是记录日志，实际绘制时会自动处理
+                }
+            }
+        }
+        
+        console.log('路径点集合并处理完成，共处理', segments.length, '个路段');
+    }
+    
+    // 获取真实路线数据
+    function getRealRouteData(segments, callback) {
+        var realSegments = new Array(segments.length);
+        var completed = 0;
+        var total = segments.length;
+        
+        if (total === 0) {
+            callback([]);
+            return;
+        }
+        
+        segments.forEach(function(segment, index) {
+            // 使用后端API获取真实路线
+            fetch('/api/get-real-route/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    from: segment.from,
+                    to: segment.to,
+                    map_type: currentMapType
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('获取路线数据失败');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    realSegments[index] = data.data;
+                } else {
+                    console.error('获取路段路线失败:', data.error);
+                    realSegments[index] = null;
+                }
+                
+                completed++;
+                if (completed === total) {
+                    callback(realSegments);
+                }
+            })
+            .catch(error => {
+                console.error('获取路线数据错误:', error);
+                realSegments[index] = null;
+                
+                completed++;
+                if (completed === total) {
+                    callback(realSegments);
+                }
+            });
+        });
+    }
+    
+    // 在地图上绘制真实路线
+    function drawRealRouteOnMap(segments) {
+        if (!segments || segments.length === 0) {
+            return;
+        }
+        
+        // 定义不同路段的颜色
+        var segmentColors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
+            '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
+            '#10AC84', '#EE5A24', '#0652DD', '#9980FA', '#EA2027'
+        ];
+        
+        segments.forEach(function(segment, index) {
+            if (!segment || !segment.polyline || segment.polyline.length === 0) {
+                return;
+            }
+            
+            var polyline = segment.polyline;
+            var color = segmentColors[index % segmentColors.length];
+            segment.routeColor = color;
+            segment.routeWeight = 4;
+            segment.routeOpacity = 0.8;
+            segment._baseStyle = {
+                color: color,
+                weight: 4,
+                opacity: 0.8
+            };
+            
+            // 百度地图绘制
+            if (baiduMap) {
+                try {
+                    var bPoints = polyline.map(function(p) {
+                        return new BMap.Point(p.lng, p.lat);
+                    });
+                    var bPolyline = new BMap.Polyline(bPoints, {
+                        strokeColor: color,
+                        strokeWeight: 4,
+                        strokeOpacity: 0.8,
+                        strokeStyle: 'solid'
+                    });
+                    baiduMap.addOverlay(bPolyline);
+                    segment.baiduPolyline = bPolyline;
+                    
+                    // 添加路段信息到polyline
+                    bPolyline.segmentInfo = {
+                        from: segment.from,
+                        to: segment.to,
+                        distance: segment.distance,
+                        duration: segment.duration,
+                        index: index
+                    };
+                } catch (error) {
+                    console.error('Error drawing Baidu map route segment:', error);
+                }
+            }
+            
+            // 高德地图绘制
+            if (amap) {
+                try {
+                    var aPath = polyline.map(function(p) {
+                        return [p.lng, p.lat];
+                    });
+                    var aPolyline = new AMap.Polyline({
+                        path: aPath,
+                        strokeColor: color,
+                        strokeWeight: 4,
+                        strokeOpacity: 0.8,
+                        strokeStyle: 'solid'
+                    });
+                    amap.add(aPolyline);
+                    segment.amapPolyline = aPolyline;
+                    
+                    // 添加路段信息到polyline
+                    aPolyline.segmentInfo = {
+                        from: segment.from,
+                        to: segment.to,
+                        distance: segment.distance,
+                        duration: segment.duration,
+                        index: index
+                    };
+                } catch (error) {
+                    console.error('Error drawing AMap route segment:', error);
+                }
+            }
+        });
+        
+        // 调整地图视野以显示整个路线
+        adjustMapViewport(segments);
+        
+        // 添加起点终点标记
+        if (segments.length > 0) {
+            var firstSeg = segments[0];
+            var lastSeg = segments[segments.length - 1];
+            if (firstSeg.from) addRouteMarker(firstSeg.from, 'start', '起');
+            if (lastSeg.to) addRouteMarker(lastSeg.to, 'end', '终');
+        }
+        
+        // 添加路段点击事件
+        addSegmentClickEvents(segments);
+    }
+    
+    function addRouteMarker(spot, type, label) {
+        var cssClass = type === 'start' ? 'custom-start-marker' : 'custom-end-marker';
+        if (baiduMap) {
+            var bPoint = new BMap.Point(spot.longitude || spot.lng, spot.latitude || spot.lat);
+            var content = '<div class="' + cssClass + '" title="' + (spot.name || '') + '">' + label + '</div>';
+            var bLabel = new BMap.Label(content, { position: bPoint, offset: new BMap.Size(-20, -20) });
+            bLabel.setStyle({ border: "none", background: "transparent" });
+            baiduMap.addOverlay(bLabel);
+            routeMarkers.push({ map: 'baidu', marker: bLabel });
+        }
+        if (amap) {
+            var content = '<div class="' + cssClass + '" title="' + (spot.name || '') + '">' + label + '</div>';
+            var aMarker = new AMap.Marker({
+                position: [spot.longitude || spot.lng, spot.latitude || spot.lat],
+                content: content,
+                offset: new AMap.Pixel(-20, -20)
+            });
+            amap.add(aMarker);
+            routeMarkers.push({ map: 'amap', marker: aMarker });
+        }
+    }
+    
+    // 添加路段点击事件
+    function addSegmentClickEvents(segments) {
+        // 百度地图路段点击事件
+        if (baiduMap) {
+            segments.forEach(function(segment, index) {
+                if (segment.baiduPolyline) {
+                    segment.baiduPolyline.addEventListener('click', function(e) {
+                        showSegmentInfo(segment, e.point);
+                    });
+                }
+            });
+        }
+        
+        // 高德地图路段点击事件
+        if (amap) {
+            segments.forEach(function(segment, index) {
+                if (segment.amapPolyline) {
+                    amap.on('click', function(e) {
+                        if (e.target === segment.amapPolyline) {
+                            showSegmentInfo(segment, e.lnglat);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    
+    // 显示路段信息
+    function showSegmentInfo(segment, point) {
+        if (!segment) return;
+        
+        var infoContent = `
+            <div class="segment-info-popup">
+                <div class="segment-title">路段 ${segment.index + 1}</div>
+                <div class="segment-route">${segment.from} → ${segment.to}</div>
+                <div class="segment-details">
+                    <div class="segment-distance">距离: ${segment.distance}</div>
+                    <div class="segment-duration">用时: ${segment.duration}</div>
+                </div>
+            </div>
+        `;
+        
+        // 百度地图显示信息窗口
+        if (baiduMap) {
+            var infoWindow = new BMap.InfoWindow(infoContent);
+            baiduMap.openInfoWindow(infoWindow, point);
+        }
+        
+        // 高德地图显示信息窗口
+        if (amap) {
+            amap.plugin('AMap.InfoWindow', function() {
+                var infoWindow = new AMap.InfoWindow({
+                    content: infoContent,
+                    offset: new AMap.Pixel(0, -30)
+                });
+                infoWindow.open(amap, point);
+            });
+        }
+    }
+    
+    // 绘制直线路线（备用）
+    function drawStraightRoute(spots) {
+        if (!spots || spots.length < 2) {
+            return;
+        }
+        
+        var points = spots.map(function(spot) {
+            return { 
+                lng: parseFloat(spot.longitude || spot.lng || 0), 
+                lat: parseFloat(spot.latitude || spot.lat || 0) 
+            };
+        });
+        
+        // 百度地图绘制
+        if (baiduMap) {
+            try {
+                var bPoints = points.map(function(p) {
+                    return new BMap.Point(p.lng, p.lat);
+                });
+                var bPolyline = new BMap.Polyline(bPoints, {
+                    strokeColor: '#667eea',
+                    strokeWeight: 4,
+                    strokeOpacity: 0.8
+                });
+                baiduMap.addOverlay(bPolyline);
+                routePolyline = { baidu: bPolyline, amap: null };
+            } catch (error) {
+                console.error('Error drawing straight Baidu map route:', error);
+            }
+        }
+        
+        // 高德地图绘制
+        if (amap) {
+            try {
+                var aPath = points.map(function(p) {
+                    return [p.lng, p.lat];
+                });
+                var aPolyline = new AMap.Polyline({
+                    path: aPath,
+                    strokeColor: '#667eea',
+                    strokeWeight: 4,
+                    strokeOpacity: 0.8
+                });
+                amap.add(aPolyline);
+                routePolyline = { baidu: null, amap: aPolyline };
+            } catch (error) {
+                console.error('Error drawing straight AMap route:', error);
+            }
+        }
+    }
+    
+    // 百度地图驾车路线规划
+    function drawBaiduDrivingRoute(spots) {
+        if (!baiduMap || !window.BMap) {
+            console.warn('百度地图未初始化');
+            return;
+        }
+        
+        // 清除现有路线
+        clearRealRoute();
+        
+        // 转换坐标点
+        var points = spots.map(function(spot) {
+            return new BMap.Point(
+                parseFloat(spot.longitude || spot.lng || 0),
+                parseFloat(spot.latitude || spot.lat || 0)
+            );
+        });
+        
+        if (points.length < 2) {
+            console.warn('至少需要两个点才能规划路线');
+            return;
+        }
+        
+        var start = points[0];
+        var end = points[points.length - 1];
+        var waypoints = points.slice(1, -1);
+        
+        // 检查途经点数量限制（百度地图最多支持16个途经点）
+        var maxWaypoints = 16;
+        if (waypoints.length > maxWaypoints) {
+            console.warn(`途经点数量 ${waypoints.length} 超过限制 ${maxWaypoints}，将进行分段规划`);
+            // 分段规划逻辑
+            drawBaiduDrivingRouteSegmented(spots);
+            return;
+        }
+        
+        // 创建驾车路线规划实例
+        var driving = new BMap.DrivingRoute(baiduMap, {
+            renderOptions: {
+                map: baiduMap,
+                autoViewport: true,
+                panel: null  // 不显示结果面板
+            },
+            policy: BMAP_DRIVING_POLICY_DEFAULT,
+            onPolylinesSet: function(routes) {
+                try {
+                    (routes || []).forEach(function(r) {
+                        if (r && r.polyline) baiduRouteOverlays.push(r.polyline);
+                    });
+                } catch (e) {}
+            },
+            onMarkersSet: function(pois) {
+                try {
+                    (pois || []).forEach(function(p) {
+                        if (p && p.marker) baiduRouteOverlays.push(p.marker);
+                    });
+                } catch (e) {}
+            },
+            onSearchComplete: function(results) {
+                var status = driving.getStatus();
+                if (status !== BMAP_STATUS_SUCCESS) {
+                    console.error('驾车路线规划失败，状态码:', status);
+                    // 降级为直线路线
+                    drawStraightRoute(spots);
+                    return;
+                }
+                // 可以在这里处理结果，例如获取路线信息
+                console.log('驾车路线规划成功');
+            }
+        });
+        
+        // 执行搜索
+        driving.search(start, end, {waypoints: waypoints});
+        
+        // 保存引用以便清除
+        if (!window.baiduDrivingRoutes) window.baiduDrivingRoutes = [];
+        window.baiduDrivingRoutes.push(driving);
+    }
+    
+    // 百度地图驾车路线分段规划（处理超过16个途经点的情况）
+    function drawBaiduDrivingRouteSegmented(spots) {
+        if (!baiduMap || !window.BMap) {
+            console.warn('百度地图未初始化');
+            return;
+        }
+        
+        // 清除现有路线
+        clearRealRoute();
+        
+        // 转换坐标点
+        var points = spots.map(function(spot) {
+            return new BMap.Point(
+                parseFloat(spot.longitude || spot.lng || 0),
+                parseFloat(spot.latitude || spot.lat || 0)
+            );
+        });
+        
+        if (points.length < 2) {
+            console.warn('至少需要两个点才能规划路线');
+            return;
+        }
+        
+        var maxWaypoints = 16; // 百度地图每段最多支持16个途经点
+        var segmentSize = maxWaypoints + 2; // 每段包含起点、终点和最多16个途经点
+        
+        // 分段处理
+        for (var i = 0; i < points.length - 1; i += (segmentSize - 1)) {
+            var segmentPoints = points.slice(i, Math.min(i + segmentSize, points.length));
+            if (segmentPoints.length < 2) continue;
+            
+            var start = segmentPoints[0];
+            var end = segmentPoints[segmentPoints.length - 1];
+            var waypoints = segmentPoints.slice(1, -1);
+            
+            // 创建驾车路线规划实例
+            var driving = new BMap.DrivingRoute(baiduMap, {
+                renderOptions: {
+                    map: baiduMap,
+                    autoViewport: (i === 0), // 只有第一段自动调整视野
+                    panel: null
+                },
+                policy: BMAP_DRIVING_POLICY_DEFAULT,
+                onPolylinesSet: function(routes) {
+                    try {
+                        (routes || []).forEach(function(r) {
+                            if (r && r.polyline) baiduRouteOverlays.push(r.polyline);
+                        });
+                    } catch (e) {}
+                },
+                onMarkersSet: function(pois) {
+                    try {
+                        (pois || []).forEach(function(p) {
+                            if (p && p.marker) baiduRouteOverlays.push(p.marker);
+                        });
+                    } catch (e) {}
+                },
+                onSearchComplete: function(results) {
+                    var status = driving.getStatus();
+                    if (status !== BMAP_STATUS_SUCCESS) {
+                        console.error('分段驾车路线规划失败，状态码:', status);
+                        // 降级为直线路线
+                        drawStraightRoute(spots);
+                        return;
+                    }
+                    console.log('分段驾车路线规划成功');
+                }
+            });
+            
+            driving.search(start, end, {waypoints: waypoints});
+            
+            // 保存引用以便清除
+            if (!window.baiduDrivingRoutes) window.baiduDrivingRoutes = [];
+            window.baiduDrivingRoutes.push(driving);
+        }
+        
+        // 所有分段规划完成后，调整地图视野以显示整个路线
+        setTimeout(function() {
+            if (baiduMap && points.length > 0) {
+                baiduMap.setViewport({ points: points, margins: [50, 50, 50, 50] });
+            }
+        }, 1000);
+    }
+    
+    // 清除真实路线
+    function clearRealRoute() {
+        clearSegmentBlink();
+
+        // 清除百度驾车路线产生的 overlay（clearResults 有时不会完全清掉）
+        if (baiduMap && baiduRouteOverlays && baiduRouteOverlays.length) {
+            try {
+                baiduRouteOverlays.forEach(function(ov) {
+                    try { baiduMap.removeOverlay(ov); } catch (e) {}
+                });
+            } catch (e) {}
+            baiduRouteOverlays = [];
+        }
+
+        // 清除百度驾车路线
+        if (window.baiduDrivingRoutes && baiduMap) {
+            window.baiduDrivingRoutes.forEach(function(driving) {
+                try {
+                    driving.clearResults && driving.clearResults();
+                } catch (e) {
+                    console.warn('清除百度驾车路线失败:', e);
+                }
+            });
+            window.baiduDrivingRoutes = [];
+        }
+        
+        if (realRouteSegments) {
+            realRouteSegments.forEach(function(segment) {
+                if (segment.baiduPolyline && baiduMap) {
+                    baiduMap.removeOverlay(segment.baiduPolyline);
+                }
+                if (segment.amapPolyline && amap) {
+                    amap.remove(segment.amapPolyline);
+                }
+            });
+            realRouteSegments = [];
+        }
+
+        // 清除路线起点终点标记
+        routeMarkers.forEach(function(item) {
+            try {
+                if (item.map === 'baidu' && baiduMap) baiduMap.removeOverlay(item.marker);
+                if (item.map === 'amap' && amap) amap.remove(item.marker);
+            } catch(e) {}
+        });
+        routeMarkers = [];
+    }
+    
+    // 调整地图视野
+    function adjustMapViewport(segments) {
+        if (!segments || segments.length === 0) {
+            return;
+        }
+        
+        var allPoints = [];
+        
+        segments.forEach(function(segment) {
+            if (segment && segment.polyline) {
+                allPoints = allPoints.concat(segment.polyline);
+            }
+        });
+        
+        if (allPoints.length === 0) {
+            return;
+        }
+        
+        // 百度地图调整视野
+        if (baiduMap) {
+            try {
+                var bPoints = allPoints.map(function(p) {
+                    return new BMap.Point(p.lng, p.lat);
+                });
+                baiduMap.setViewport({ points: bPoints, margins: [50, 50, 50, 50] });
+            } catch (error) {
+                console.error('Error adjusting Baidu map viewport:', error);
+            }
+        }
+        
+        // 高德地图调整视野
+        if (amap) {
+            try {
+                var bounds = new AMap.Bounds();
+                allPoints.forEach(function(p) {
+                    bounds.extend([p.lng, p.lat]);
+                });
+                amap.setBounds(bounds);
+            } catch (error) {
+                console.error('Error adjusting AMap viewport:', error);
+            }
+        }
+    }
+    
+    // 关闭结果面板
+    function closeResult() {
+        clearSegmentBlink();
+        document.getElementById('resultPanel').classList.remove('show');
+    }
+
+    // 规划结果悬浮窗：拖拽移动 + 右下角拖拽缩放
+    function initResultSheetDrag() {
+        var panel = document.getElementById('resultPanel');
+        var dragHandle = panel ? panel.querySelector('.result-header') : null;
+        var resizeHandles = panel ? panel.querySelectorAll('.result-resize-handle') : null;
+        if (!panel || !dragHandle || !resizeHandles || !resizeHandles.length) return;
+
+        var minW = 300;
+        var minH = 220;
+        var maxWScale = 0.9;
+        var maxHScale = 0.85;
+
+        var dragState = {
+            active: false,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            startLeft: 0,
+            startTop: 0
+        };
+
+        var resizeState = {
+            active: false,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            startLeft: 0,
+            startTop: 0,
+            startWidth: 0,
+            startHeight: 0,
+            dir: 'br',
+            handleEl: null
+        };
+
+        function maxW() {
+            return Math.max(minW, Math.floor(window.innerWidth * maxWScale));
+        }
+
+        function maxH() {
+            return Math.max(minH, Math.floor(window.innerHeight * maxHScale));
+        }
+
+        function clampSize(width, height) {
+            return {
+                width: Math.max(minW, Math.min(maxW(), Math.round(width))),
+                height: Math.max(minH, Math.min(maxH(), Math.round(height)))
+            };
+        }
+
+        function clampPosition(left, top, width, height) {
+            var gap = 8;
+            return {
+                left: Math.max(gap, Math.min(window.innerWidth - width - gap, Math.round(left))),
+                top: Math.max(gap, Math.min(window.innerHeight - height - gap, Math.round(top)))
+            };
+        }
+
+        function ensureAbsoluteFrame() {
+            var rect = panel.getBoundingClientRect();
+            var size = clampSize(rect.width, rect.height);
+            var pos = clampPosition(rect.left, rect.top, size.width, size.height);
+            panel.style.right = 'auto';
+            panel.style.top = pos.top + 'px';
+            panel.style.left = pos.left + 'px';
+            panel.style.width = size.width + 'px';
+            panel.style.height = size.height + 'px';
+            panel.style.maxHeight = 'none';
+        }
+
+        function onDragMove(e) {
+            if (!dragState.active || e.pointerId !== dragState.pointerId) return;
+            e.preventDefault();
+            var width = panel.offsetWidth;
+            var height = panel.offsetHeight;
+            var left = dragState.startLeft + (e.clientX - dragState.startX);
+            var top = dragState.startTop + (e.clientY - dragState.startY);
+            var pos = clampPosition(left, top, width, height);
+            panel.style.left = pos.left + 'px';
+            panel.style.top = pos.top + 'px';
+        }
+
+        function stopDrag(e) {
+            if (!dragState.active) return;
+            if (e && e.pointerId !== dragState.pointerId) return;
+            dragState.active = false;
+            dragState.pointerId = null;
+            panel.classList.remove('dragging');
+            dragHandle.removeEventListener('pointermove', onDragMove);
+            dragHandle.removeEventListener('pointerup', stopDrag);
+            dragHandle.removeEventListener('pointercancel', stopDrag);
+            try {
+                if (e) dragHandle.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+        }
+
+        function onResizeMove(e) {
+            if (!resizeState.active || e.pointerId !== resizeState.pointerId) return;
+            e.preventDefault();
+            var dx = e.clientX - resizeState.startX;
+            var dy = e.clientY - resizeState.startY;
+            var nextW;
+            var nextH;
+            var nextLeft;
+            var nextTop;
+
+            if (resizeState.dir === 'tl') {
+                var fixedRight = resizeState.startLeft + resizeState.startWidth;
+                var fixedBottom = resizeState.startTop + resizeState.startHeight;
+                nextW = resizeState.startWidth - dx;
+                nextH = resizeState.startHeight - dy;
+                var sizeTL = clampSize(nextW, nextH);
+                nextLeft = fixedRight - sizeTL.width;
+                nextTop = fixedBottom - sizeTL.height;
+                var posTL = clampPosition(nextLeft, nextTop, sizeTL.width, sizeTL.height);
+                panel.style.left = posTL.left + 'px';
+                panel.style.top = posTL.top + 'px';
+                panel.style.width = sizeTL.width + 'px';
+                panel.style.height = sizeTL.height + 'px';
+                return;
+            }
+
+            nextW = resizeState.startWidth + dx;
+            nextH = resizeState.startHeight + dy;
+            var size = clampSize(nextW, nextH);
+            var pos = clampPosition(resizeState.startLeft, resizeState.startTop, size.width, size.height);
+            panel.style.left = pos.left + 'px';
+            panel.style.top = pos.top + 'px';
+            panel.style.width = size.width + 'px';
+            panel.style.height = size.height + 'px';
+        }
+
+        function stopResize(e) {
+            if (!resizeState.active) return;
+            if (e && e.pointerId !== resizeState.pointerId) return;
+            resizeState.active = false;
+            resizeState.pointerId = null;
+            panel.classList.remove('resizing');
+            if (resizeState.handleEl) {
+                resizeState.handleEl.removeEventListener('pointermove', onResizeMove);
+                resizeState.handleEl.removeEventListener('pointerup', stopResize);
+                resizeState.handleEl.removeEventListener('pointercancel', stopResize);
+            }
+            try {
+                if (e && resizeState.handleEl) resizeState.handleEl.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+            resizeState.handleEl = null;
+        }
+
+        dragHandle.addEventListener('pointerdown', function(e) {
+            if (e.pointerType !== 'touch' && e.button !== 0) return;
+            if (!panel.classList.contains('show')) return;
+            if (e.target && e.target.closest('.result-close')) return;
+            e.preventDefault();
+            ensureAbsoluteFrame();
+            dragState.active = true;
+            dragState.pointerId = e.pointerId;
+            dragState.startX = e.clientX;
+            dragState.startY = e.clientY;
+            dragState.startLeft = panel.offsetLeft;
+            dragState.startTop = panel.offsetTop;
+            panel.classList.add('dragging');
+            try {
+                dragHandle.setPointerCapture(e.pointerId);
+            } catch (err) {}
+            dragHandle.addEventListener('pointermove', onDragMove);
+            dragHandle.addEventListener('pointerup', stopDrag);
+            dragHandle.addEventListener('pointercancel', stopDrag);
+        }, { passive: false });
+
+        resizeHandles.forEach(function(resizeHandle) {
+            resizeHandle.addEventListener('pointerdown', function(e) {
+                if (e.pointerType !== 'touch' && e.button !== 0) return;
+                if (!panel.classList.contains('show')) return;
+                e.preventDefault();
+                ensureAbsoluteFrame();
+                resizeState.active = true;
+                resizeState.pointerId = e.pointerId;
+                resizeState.startX = e.clientX;
+                resizeState.startY = e.clientY;
+                resizeState.startLeft = panel.offsetLeft;
+                resizeState.startTop = panel.offsetTop;
+                resizeState.startWidth = panel.offsetWidth;
+                resizeState.startHeight = panel.offsetHeight;
+                resizeState.dir = resizeHandle.dataset.dir || 'br';
+                resizeState.handleEl = resizeHandle;
+                panel.classList.add('resizing');
+                try {
+                    resizeHandle.setPointerCapture(e.pointerId);
+                } catch (err) {}
+                resizeHandle.addEventListener('pointermove', onResizeMove);
+                resizeHandle.addEventListener('pointerup', stopResize);
+                resizeHandle.addEventListener('pointercancel', stopResize);
+            }, { passive: false });
+        });
+
+        window.addEventListener('resize', function() {
+            if (!panel.style.width || !panel.style.height || !panel.style.left || !panel.style.top) return;
+            var size = clampSize(parseFloat(panel.style.width), parseFloat(panel.style.height));
+            var pos = clampPosition(parseFloat(panel.style.left), parseFloat(panel.style.top), size.width, size.height);
+            panel.style.left = pos.left + 'px';
+            panel.style.top = pos.top + 'px';
+            panel.style.width = size.width + 'px';
+            panel.style.height = size.height + 'px';
+        });
+    }
+
+    // 控制面板拖拽（悬浮窗效果）
+    function initControlPanelDrag() {
+        var panel = document.querySelector('.control-panel');
+        var handle = document.getElementById('panelDragHandle');
+        if (!panel || !handle) return;
+
+        var dragging = false;
+        var startX = 0;
+        var startY = 0;
+        var startLeft = 0;
+        var startTop = 0;
+        var activePointerId = null;
+
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+
+        function clampPosition(left, top) {
+            var vw = window.innerWidth;
+            var vh = window.innerHeight;
+            var width = panel.offsetWidth;
+            var height = panel.offsetHeight;
+            var minGap = 8;
+            return {
+                left: Math.max(minGap, Math.min(vw - width - minGap, Math.round(left))),
+                top: Math.max(minGap, Math.min(vh - height - minGap, Math.round(top)))
+            };
+        }
+
+        function onPointerMove(e) {
+            if (!dragging || e.pointerId !== activePointerId) return;
+            e.preventDefault();
+            var nextLeft = startLeft + (e.clientX - startX);
+            var nextTop = startTop + (e.clientY - startY);
+            var clamped = clampPosition(nextLeft, nextTop);
+            panel.style.left = clamped.left + 'px';
+            panel.style.top = clamped.top + 'px';
+        }
+
+        function endDrag(e) {
+            if (!dragging) return;
+            if (e && e.pointerId !== activePointerId) return;
+            dragging = false;
+            activePointerId = null;
+            panel.classList.remove('dragging');
+            handle.removeEventListener('pointermove', onPointerMove);
+            handle.removeEventListener('pointerup', endDrag);
+            handle.removeEventListener('pointercancel', endDrag);
+            try {
+                if (e) handle.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+        }
+
+        handle.addEventListener('pointerdown', function(e) {
+            if (e.pointerType !== 'touch' && e.button !== 0) return;
+            if (window.innerWidth <= 640) return;
+            e.preventDefault();
+            dragging = true;
+            activePointerId = e.pointerId;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = panel.offsetLeft;
+            startTop = panel.offsetTop;
+            panel.classList.add('dragging');
+            try {
+                handle.setPointerCapture(e.pointerId);
+            } catch (err) {}
+            handle.addEventListener('pointermove', onPointerMove);
+            handle.addEventListener('pointerup', endDrag);
+            handle.addEventListener('pointercancel', endDrag);
+        }, { passive: false });
+
+        window.addEventListener('resize', function() {
+            if (window.innerWidth <= 640) return;
+            var clamped = clampPosition(panel.offsetLeft, panel.offsetTop);
+            panel.style.left = clamped.left + 'px';
+            panel.style.top = clamped.top + 'px';
+        });
+    }
+
+    var controlPanelMinimized = false;
+    var controlPanelIconPosition = null;
+    var suppressRestoreClick = false;
+
+    function getDefaultControlPanelIconPosition(restoreBtn) {
+        var btnHeight = (restoreBtn && restoreBtn.offsetHeight) || 56;
+        var leftGap = 15;
+        var bottomGap = 65;
+        return {
+            left: leftGap,
+            top: window.innerHeight - btnHeight - bottomGap
+        };
+    }
+
+    function toggleControlPanelMinimize() {
+        if (typeof window._toggleControlPanelMinimizeImpl === 'function') {
+            window._toggleControlPanelMinimizeImpl();
+        }
+    }
+
+    function restoreControlPanel() {
+        if (typeof window._restoreControlPanelImpl === 'function') {
+            window._restoreControlPanelImpl();
+        }
+    }
+
+    function initControlPanelMinimize() {
+        var panel = document.querySelector('.control-panel');
+        var restoreBtn = document.getElementById('panelRestoreBtn');
+        var fabBtn = document.getElementById('minimizedRouteBtn');
+        if (!panel || !restoreBtn) return;
+
+        function setIconPosition(left, top) {
+            var btnWidth = restoreBtn.offsetWidth || 56;
+            var btnHeight = restoreBtn.offsetHeight || 56;
+            var minGap = 8;
+            var maxLeft = Math.max(minGap, window.innerWidth - btnWidth - minGap);
+            var maxTop = Math.max(minGap, window.innerHeight - btnHeight - minGap);
+            var clampedLeft = Math.max(minGap, Math.min(maxLeft, Math.round(left)));
+            var clampedTop = Math.max(minGap, Math.min(maxTop, Math.round(top)));
+            controlPanelIconPosition.left = clampedLeft;
+            controlPanelIconPosition.top = clampedTop;
+            restoreBtn.style.left = clampedLeft + 'px';
+            restoreBtn.style.top = clampedTop + 'px';
+            if (fabBtn) {
+                fabBtn.style.left = clampedLeft + 'px';
+                fabBtn.style.top = clampedTop + 'px';
+                fabBtn.style.bottom = 'auto';
+            }
+        }
+
+        function applyState() {
+            if (controlPanelMinimized) {
+                panel.classList.add('is-minimized');
+                restoreBtn.classList.add('show');
+                setIconPosition(controlPanelIconPosition.left, controlPanelIconPosition.top);
+                restoreBtn.style.opacity = '1';
+                restoreBtn.style.pointerEvents = 'auto';
+                if (fabBtn) {
+                    fabBtn.style.display = 'flex';
+                }
+            } else {
+                panel.classList.remove('is-minimized');
+                restoreBtn.classList.remove('show');
+                restoreBtn.style.opacity = '';
+                restoreBtn.style.pointerEvents = '';
+                restoreBtn.style.display = '';
+                if (fabBtn) {
+                    fabBtn.style.display = 'none';
+                }
+            }
+        }
+
+        if (!controlPanelIconPosition) {
+            controlPanelIconPosition = getDefaultControlPanelIconPosition(restoreBtn);
+        }
+
+        window._toggleControlPanelMinimizeImpl = function() {
+            if (controlPanelMinimized) {
+                restoreControlPanel();
+                return;
+            }
+            if (panel.dataset.minimizing === '1') return;
+
+            var defaultPos = getDefaultControlPanelIconPosition(restoreBtn);
+            setIconPosition(defaultPos.left, defaultPos.top);
+
+            var panelRect = panel.getBoundingClientRect();
+            restoreBtn.classList.add('show');
+            restoreBtn.style.opacity = '0';
+            restoreBtn.style.pointerEvents = 'none';
+            var targetRect = restoreBtn.getBoundingClientRect();
+
+            var deltaX = targetRect.left - panelRect.left + (targetRect.width - panelRect.width) / 2;
+            var deltaY = targetRect.top - panelRect.top + (targetRect.height - panelRect.height) / 2;
+            var scaleX = Math.max(0.2, targetRect.width / panelRect.width);
+            var scaleY = Math.max(0.2, targetRect.height / panelRect.height);
+
+            panel.dataset.minimizing = '1';
+            var animation = panel.animate(
+                [
+                    { transform: 'translate(0px, 0px) scale(1, 1)', opacity: 1 },
+                    { transform: 'translate(' + deltaX + 'px, ' + deltaY + 'px) scale(' + scaleX + ', ' + scaleY + ')', opacity: 0.05 }
+                ],
+                {
+                    duration: 320,
+                    easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+                    fill: 'forwards'
+                }
+            );
+
+            animation.onfinish = function() {
+                panel.dataset.minimizing = '0';
+                controlPanelMinimized = true;
+                panel.classList.add('is-minimized');
+                animation.cancel();
+                restoreBtn.style.opacity = '1';
+                restoreBtn.style.pointerEvents = 'auto';
+                restoreBtn.animate(
+                    [
+                        { transform: 'scale(0.78)', opacity: 0.35 },
+                        { transform: 'scale(1)', opacity: 1 }
+                    ],
+                    {
+                        duration: 180,
+                        easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
+                    }
+                );
+                // 显示FAB按钮，隐藏恢复按钮
+                if (fabBtn) {
+                    fabBtn.style.display = 'flex';
+                }
+                restoreBtn.style.display = 'none';
+            };
+            animation.oncancel = function() {
+                panel.dataset.minimizing = '0';
+            };
+        };
+
+        window._restoreControlPanelImpl = function() {
+            if (suppressRestoreClick) {
+                suppressRestoreClick = false;
+                return;
+            }
+            controlPanelMinimized = false;
+            panel.getAnimations().forEach(function(anim) { anim.cancel(); });
+            applyState();
+            panel.animate(
+                [
+                    { opacity: 0.4, transform: 'translateY(10px) scale(0.98)' },
+                    { opacity: 1, transform: 'translateY(0px) scale(1)' }
+                ],
+                {
+                    duration: 220,
+                    easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
+                }
+            );
+        };
+
+        var iconDragging = false;
+        var iconStartX = 0;
+        var iconStartY = 0;
+        var iconStartLeft = 0;
+        var iconStartTop = 0;
+        var iconMoved = false;
+        var iconActivePointerId = null;
+
+        function onIconPointerMove(e) {
+            if (!iconDragging || e.pointerId !== iconActivePointerId) return;
+            e.preventDefault();
+            var dx = e.clientX - iconStartX;
+            var dy = e.clientY - iconStartY;
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) iconMoved = true;
+            setIconPosition(iconStartLeft + dx, iconStartTop + dy);
+        }
+
+        function endIconDrag(e) {
+            if (!iconDragging) return;
+            if (e && e.pointerId !== iconActivePointerId) return;
+            iconDragging = false;
+            iconActivePointerId = null;
+            restoreBtn.classList.remove('dragging');
+            restoreBtn.removeEventListener('pointermove', onIconPointerMove);
+            restoreBtn.removeEventListener('pointerup', endIconDrag);
+            restoreBtn.removeEventListener('pointercancel', endIconDrag);
+            if (fabBtn) {
+                fabBtn.classList.remove('dragging');
+                fabBtn.removeEventListener('pointermove', onIconPointerMove);
+                fabBtn.removeEventListener('pointerup', endIconDrag);
+                fabBtn.removeEventListener('pointercancel', endIconDrag);
+            }
+            try {
+                if (e) restoreBtn.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+            if (iconMoved) suppressRestoreClick = true;
+        }
+
+        restoreBtn.addEventListener('pointerdown', function(e) {
+            if (!controlPanelMinimized) return;
+            if (e.pointerType !== 'touch' && e.button !== 0) return;
+            e.preventDefault();
+            iconDragging = true;
+            iconMoved = false;
+            iconActivePointerId = e.pointerId;
+            iconStartX = e.clientX;
+            iconStartY = e.clientY;
+            iconStartLeft = controlPanelIconPosition.left;
+            iconStartTop = controlPanelIconPosition.top;
+            restoreBtn.classList.add('dragging');
+            try {
+                restoreBtn.setPointerCapture(e.pointerId);
+            } catch (err) {}
+            restoreBtn.addEventListener('pointermove', onIconPointerMove);
+            restoreBtn.addEventListener('pointerup', endIconDrag);
+            restoreBtn.addEventListener('pointercancel', endIconDrag);
+        }, { passive: false });
+
+        window.addEventListener('resize', function() {
+            if (!controlPanelMinimized) return;
+            setIconPosition(controlPanelIconPosition.left, controlPanelIconPosition.top);
+        });
+    }
+    
+    // 获取Cookie
+    function getCookie(name) {
+        var cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // 页面加载完成后初始化
+    window.onload = function() {
+        // 检查地图API是否加载
+        var baiduMapLoaded = typeof window.baiduMapLoaded !== 'undefined' && window.baiduMapLoaded;
+        var amapLoaded = typeof window.amapLoaded !== 'undefined' && window.amapLoaded;
+        
+        // 根据API加载情况显示/隐藏地图切换按钮
+        var btnBaiduMap = document.getElementById('btnBaiduMap');
+        var btnAmap = document.getElementById('btnAmap');
+        
+        if (!baiduMapLoaded) {
+            btnBaiduMap.style.display = 'none';
+        }
+        if (!amapLoaded) {
+            btnAmap.style.display = 'none';
+        }
+        
+        // 如果两个API都未加载，隐藏切换器
+        if (!baiduMapLoaded && !amapLoaded) {
+            document.getElementById('mapSwitcher').style.display = 'none';
+        }
+
+        initControlPanelMinimize();
+        initControlPanelDrag();
+        initResultSheetDrag();
+        
+        // 根据API加载情况选择地图
+        if (baiduMapLoaded) {
+            initBaiduMap();
+            btnBaiduMap.classList.add('active');
+        } else if (amapLoaded) {
+            // 如果百度地图未加载但高德地图加载了，自动切换到高德地图
+            currentMapType = 'amap';
+            initAMap();
+            btnAmap.classList.add('active');
+        } else {
+            // 两个地图API都未加载
+            document.getElementById('baiduMap').innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">地图API未配置<br>请配置BAIDU_MAP_AK或AMAP_AK环境变量后刷新页面</div>';
+        }
+    };
+</script>
+
+<!-- 地图内嵌信息窗（路段 / 景点）与旧版类名兼容 -->
+<style>
+    .segment-info-popup {
+        padding: 12px 14px;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        min-width: 200px;
+        color: #0f172a;
+    }
+    .segment-info-popup .segment-title {
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: -0.02em;
+        color: #1e1b4b;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid rgba(99, 102, 241, 0.45);
+    }
+    .segment-info-popup .segment-route {
+        font-weight: 600;
+        color: #4338ca;
+        margin-bottom: 8px;
+    }
+    .segment-info-popup .segment-details {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .segment-info-popup .segment-distance,
+    .segment-info-popup .segment-duration {
+        color: #475569;
+        font-size: 13px;
+    }
+    .segment-info-popup .segment-distance::before {
+        content: "📍 ";
+        margin-right: 4px;
+    }
+    .segment-info-popup .segment-duration::before {
+        content: "⏱️ ";
+        margin-right: 4px;
+    }
+
+    .spot-info-popup {
+        padding: 12px 14px;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        min-width: 200px;
+        color: #0f172a;
+    }
+    .spot-info-popup .spot-title {
+        font-weight: 700;
+        font-size: 15px;
+        color: #14532d;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid rgba(16, 185, 129, 0.45);
+    }
+    .spot-info-popup .spot-name {
+        font-weight: 700;
+        color: #059669;
+        margin-bottom: 6px;
+    }
+    .spot-info-popup .spot-address {
+        color: #64748b;
+        font-size: 13px;
+        margin-bottom: 4px;
+    }
+    .spot-info-popup .spot-duration {
+        color: #4f46e5;
+        font-size: 13px;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}

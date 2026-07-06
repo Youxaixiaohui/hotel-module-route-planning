@@ -1,0 +1,445 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>入梦 · 山川 | 西北旅居管理系统</title>
+    <!-- 网站图标 -->
+    <link rel="icon" type="image/png" href="{% static 'images/hotel-logo.png' %}">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;500;700&family=Montserrat:wght@300;500&display=swap" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            /* 提取自青海湖的色彩 */
+            --primary-gold: #d4af37; /* 流沙金 */
+            --lake-blue: #1A3C40;    /* 深湖蓝 */
+            --text-dark: #2c3e50;
+            --glass-bg: rgba(255, 255, 255, 0.85); /* 高透磨砂白 */
+            --glass-border: rgba(255, 255, 255, 0.6);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Serif SC', serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #000;
+        }
+
+        /* --- 1. 全屏背景层 --- */
+        .bg-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+            /* 使用你上传的青海湖图片 */
+            background-image: url("{% static 'images/view.jpg'%}");
+            background-size: cover;
+            background-position: center;
+            /* 缓慢缩放动画，模拟电影镜头 */
+            animation: kenBurns 20s infinite alternate linear;
+        }
+
+        /* 遮罩层：让背景稍微暗一点，衬托前景 */
+        .bg-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 2;
+            background: radial-gradient(
+                circle at center, 
+                rgba(255, 255, 255, 0) 0%,
+                rgba(240, 230, 220, 0.15) 100%
+            );
+            backdrop-filter: blur(1px);
+        }
+
+        /* --- 2. 核心容器：左右布局的悬浮卡片 --- */
+        .main-card {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            width: 960px;
+            max-width: 90%;
+            height: 580px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 
+                0 20px 50px rgba(0, 0, 0, 0.1),
+                0 0 80px rgba(255, 255, 255, 0.4);
+
+            /* 进场动画 */
+            opacity: 0;
+            transform: translateY(30px);
+            animation: cardEntrance 1s ease 0.5s forwards;
+        }
+
+        /* 左侧：玻璃磨砂 + 竖排文字 */
+        .art-side {
+            width: 45%;
+            background: rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.6);
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 左侧诗词容器 */
+        .vertical-poem {
+            writing-mode: vertical-rl;
+            font-size: 2rem;
+            letter-spacing: 0.8rem;
+            color: #fff;
+            text-shadow: 
+                0 2px 4px rgba(0, 0, 0, 0.4),
+                0 4px 12px rgba(0, 0, 0, 0.2);
+            font-weight: 700;
+
+            border-right: 1px solid rgba(255,255,255,0.6);
+            padding-right: 20px;
+            position: relative;
+        }
+
+        /* --- 2. 印章：绝对对齐文字顶部 (起点) --- */
+        .seal {
+            /* 基础质感与竖排保持不变 */
+            width: 36px;
+            height: 76px;
+            background: #c23531;
+            border-radius: 4px 2px 5px 3px;
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: rgba(255, 255, 255, 0.95);
+            font-size: 18px;
+            font-family: 'STKaiti', 'KaiTi', 'Noto Serif SC', serif;
+            font-weight: bold;
+            letter-spacing: 6px;
+            box-shadow:
+                2px 8px 15px rgba(0, 0, 0, 0.25),
+                inset 0 0 6px rgba(100, 0, 0, 0.4);
+
+            /* 【核心修改】：精准对齐顶部起点 */
+            position: absolute;
+            top: 0;          /* 将印章的顶部与旁边“大”字的顶部对齐 */
+            left: -38px;     /* 悬浮在左侧，距离可根据喜好微调 */
+
+            /* 确保清除了之前的 bottom 或 margin 属性 */
+            bottom: auto;
+            transform: none;
+            margin-top: 0;
+        }
+
+        /* 内部界格线（保持不变） */
+        .seal::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px; right: 2px; bottom: 2px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        /* 右侧：实心白底（保证输入体验） */
+        .form-side {
+            width: 55%;
+            background: var(--glass-bg); /* 稍微透一点白 */
+            backdrop-filter: blur(30px);
+            padding: 50px 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* Logo 区域 */
+        .logo-area {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        /* Logo 区域的图片样式 */
+        .logo-area img {
+            height: 70px;
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+
+            /* 【核心修改】：在这里添加图片圆角 */
+            border-radius: 16px;
+            
+            /* 可选：如果图片本身自带白底，圆角外有白边的话，加上这行可以裁切掉多余部分 */
+            overflow: hidden;
+        }
+
+        .welcome-text {
+            text-align: center;
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 30px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        /* --- 输入框完美排版 --- */
+        .input-group {
+            position: relative;
+            margin-bottom: 35px;
+            border-bottom: 1px solid #aaa;
+        }
+
+        .input-group::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--lake-blue);
+            transform: scaleX(0);
+            transform-origin: center;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .input-group.active::after {
+            transform: scaleX(1);
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 0;
+            top: 12px;
+            color: #aaa;
+            transition: 0.3s;
+            z-index: 5;
+        }
+
+        .input-group.active .input-icon {
+            color: var(--lake-blue);
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 10px 0 10px 25px;
+            background: transparent;
+            border: none;
+            outline: none;
+            font-size: 1.1rem;
+            color: var(--text-dark);
+            font-family: 'Montserrat', sans-serif;
+            position: relative;
+            z-index: 2;
+        }
+
+        .input-group label {
+            position: absolute;
+            top: 10px; left: 25px;
+            color: #777;
+            font-size: 1rem;
+            transition: 0.3s ease;
+            z-index: 1;
+        }
+
+        .input-group.active label {
+            top: -18px;
+            left: 0;
+            font-size: 0.8rem;
+            color: var(--lake-blue);
+            font-weight: 700;
+        }
+
+        /* --- 新增：密码可见切换图标样式 --- */
+        .toggle-password {
+            position: absolute;
+            right: 0;
+            top: 12px; /* 垂直居中于输入框 */
+            cursor: pointer;
+            color: #aaa;
+            font-size: 1.1rem;
+            transition: 0.3s ease;
+            z-index: 5; /* 确保能被点击到 */
+        }
+
+        .toggle-password:hover {
+            color: var(--lake-blue); /* 悬停时变成主题色 */
+        }
+
+        /* 给密码输入框右侧留出空间，防止密码太长时被眼睛图标遮挡 */
+        #password {
+            padding: 10px 30px 10px 25px !important;
+        }
+
+        /* 按钮 */
+        .btn-submit {
+            width: 100%;
+            padding: 16px;
+            background: var(--lake-blue); /* 深青色 */
+            color: #fff;
+            border: none;
+            font-size: 1rem;
+            letter-spacing: 0.3em;
+            cursor: pointer;
+            transition: 0.3s;
+            box-shadow: 0 10px 20px rgba(26, 60, 64, 0.2);
+            margin-top: 10px;
+            font-family: 'Noto Serif SC', serif;
+        }
+
+        .btn-submit:hover {
+            background: var(--primary-gold); /* 悬停变金色 */
+            transform: translateY(-2px);
+            color: #000;
+        }
+
+        /* 底部信息 */
+        .footer-row {
+            display: flex; justify-content: space-between;
+            margin-top: 25px;
+            font-size: 0.85rem;
+            color: #666;
+        }
+        .footer-row a { color: #666; text-decoration: none; transition:0.2s; }
+        .footer-row a:hover { color: var(--lake-blue); }
+
+        /* 错误提示 */
+        .error-tip {
+            position: absolute; bottom: -22px; left: 0;
+            color: #d32f2f; font-size: 0.75rem;
+        }
+
+        /* --- 动画关键帧 --- */
+        @keyframes kenBurns { 0% { transform: scale(1); } 100% { transform: scale(1.1); } }
+        @keyframes cardEntrance { to { opacity: 1; transform: translateY(0); } }
+
+    </style>
+</head>
+<body>
+
+    <div class="bg-layer"></div>
+    <div class="bg-overlay"></div>
+
+    <div class="main-card">
+        <div class="art-side">
+            <div class="vertical-poem">
+                行无止境<br>大美中国
+                <div class="seal">山川</div>
+            </div>
+        </div>
+
+        <div class="form-side">
+            <div class="logo-area">
+                <img src="{% static 'images/hotel-logo.png' %}" alt="Logo">
+            </div>
+            <p class="welcome-text">欢迎使用路线规划系统</p>
+
+            <form method="post">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="alert" style="color: #d32f2f; background: rgba(211, 47, 47, 0.1); padding: 10px; border-radius: 4px; margin-bottom: 20px; font-size: 0.9rem; text-align: center;">
+                    {{ form.non_field_errors.0 }}
+                </div>
+                {% endif %}
+
+                <div class="input-group">
+                    <i class="fas fa-user input-icon"></i> <input type="text" name="username" id="username" required autocomplete="off">
+                    <label>账号 / Account</label>
+                    {% if form.username.errors %}
+                    <div class="error-tip">{{ form.username.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="input-group">
+                    <i class="fas fa-lock input-icon"></i> <input type="password" name="password" id="password" required>
+                    <label>密码 / Password</label>
+                    
+                    <i class="fas fa-eye-slash toggle-password" id="togglePassword"></i>
+                    
+                    {% if form.password.errors %}
+                    <div class="error-tip">{{ form.password.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="btn-submit">登 录</button>
+
+                <div class="footer-row">
+                    <label style="cursor: pointer;">
+                        <input type="checkbox" name="remember"> 记住我
+                    </label>
+                    <div>
+                        <a href="{% url 'register' %}">注册账号</a>
+                        <span style="margin: 0 8px; color: #ccc;">|</span>
+                        <a href="#">忘记密码?</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 依然保留最稳健的 JS 排版修复逻辑
+        document.addEventListener('DOMContentLoaded', function() {
+            const inputs = document.querySelectorAll('.input-group input');
+
+            function updateInputState(input) {
+                const group = input.closest('.input-group');
+                // 只要有值或者聚焦，就加上 active 类
+                if (input.value.trim() !== '' || document.activeElement === input) {
+                    group.classList.add('active');
+                } else {
+                    group.classList.remove('active');
+                }
+            }
+
+            inputs.forEach(input => {
+                // 1. 初始化检查
+                updateInputState(input);
+
+                // 2. 延时检查（防自动填充延迟）
+                setTimeout(() => updateInputState(input), 200);
+
+                // 3. 事件监听
+                input.addEventListener('focus', () => input.closest('.input-group').classList.add('active'));
+                input.addEventListener('blur', () => updateInputState(input));
+                input.addEventListener('input', () => updateInputState(input));
+
+                // 4. 针对 Chrome 自动填充的动画钩子
+                input.addEventListener('animationstart', (e) => {
+                    if (e.animationName === "onAutoFillStart") updateInputState(input);
+                });
+            });
+
+            // ==========================================
+            // 【新增】密码小眼睛点击切换逻辑
+            // ==========================================
+            const togglePassword = document.querySelector('#togglePassword');
+            const passwordInput = document.querySelector('#password');
+
+            if (togglePassword && passwordInput) {
+                togglePassword.addEventListener('click', function () {
+                    // 1. 判断当前是密码类型还是文本类型，然后反转它
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    
+                    // 2. 切换图标类名（fa-eye-slash 是闭眼，fa-eye 是睁眼）
+                    this.classList.toggle('fa-eye-slash');
+                    this.classList.toggle('fa-eye');
+                    
+                    // 3. 点击完让密码框重新获得焦点，体验更好
+                    passwordInput.focus();
+                });
+            }
+
+        });
+    </script>
+</body>
+</html>
